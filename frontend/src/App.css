@@ -1,0 +1,41 @@
+@import 'tailwindcss';
+
+@theme {
+    --color-borders: #ffffff38;
+    --breakpoint-lg: 950px;
+    --breakpoint-md: 550px;
+    --breakpoint-sm: 396px;
+}
+
+html {
+    font-size: 16px;
+}
+body {
+    overflow: hidden;
+    background-color: black;
+}
+#root {
+    width: 100vw;
+    min-width: 300px;
+    text-align: center;
+}
+button {
+    cursor: pointer;
+}
+input, button {
+    outline: none;
+}
+*::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+}
+*::-webkit-scrollbar-track {
+    background: #1e1e1e; /* Dark track */
+}
+*::-webkit-scrollbar-thumb {
+    background: #555; /* Darker thumb */
+    border-radius: 6px;
+}
+*::-webkit-scrollbar-thumb:hover {
+    background: #777;
+}
