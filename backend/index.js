@@ -40,28 +40,28 @@ const chat_model = require('./model/chat_model')
 io.on('connection', (socket) => {
     console.log('connected')
 /*1*/
-    socket.on('register', async (_id) => {
-        if(!_id) {
+    socket.on('register', async (my_id) => {
+        if(!my_id) {
             console.error('didnt receive id (null)')
             return
         }
-        const user = await account_model.findById(_id)
+        const user = await account_model.findById(my_id)
         user.socketId = socket.id
         await user.save()
-        const contacts = user.contacts.map(item => [_id, item].sort())
-        const requests = user.requests.map(item => [_id, item].sort())
+        const contacts = user.contacts.map(item => [my_id, item].sort())
+        const requests = user.requests.map(item => [my_id, item].sort())
         const [Contacts, Requests] = await Promise.all([
             chat_model.aggregate([
                 { $match: { between: { $in: contacts } } },
-                { $project: { _id: 1, between: 1, lastMessage: { $arrayElemAt: ['$messages', -1] } } }
+                { $project: { _id: 1, between: 1, userA: 1, userB: 1, lastMessage: { $arrayElemAt: ['$messages', -1] } } }
             ]),
             chat_model.aggregate([
                 { $match: { between: { $in: requests } } },
-                { $project: { _id: 1, between: 1, lastMessage: { $arrayElemAt: ['$messages', -1] } } }
+                { $project: { _id: 1, between: 1, userA: 1, userB: 1, lastMessage: { $arrayElemAt: ['$messages', -1] } } }
             ])
         ])
 
-        const notMyId = (c) => {if(c.between[0] !== _id) {return c.between[0]} else {return c.between[1]}}
+        const notMyId = (c) => {if(c.between[0] !== my_id) {return c.between[0]} else {return c.between[1]}}
         const allIds = [
             ...new Set([...Contacts.map(c => notMyId(c)), ...Requests.map(c => notMyId(c))])
         ]
@@ -85,23 +85,48 @@ io.on('connection', (socket) => {
     })
 
 /*2*/
-    socket.on('request messages', async ({chat_id, my_id}) => {
-        const chat = await chat_model.findById(chat_id)
-        if(chat.userA._id === my_id) {
-            chat.userA.checked = true
-        } else {
-            chat.userB.checked = true
+    socket.on('request chat', async ({prev_chat_id, chat_id, my_id, user_id}) => {
+        if (prev_chat_id) {
+            const prevChat = await chat_model.findById(prev_chat_id)
+            if(prevChat.userA.id === my_id)
+                prevChat.userA.socketId = null
+            else
+                prevChat.userB.socketId = null
+            await prevChat.save()
         }
-        await chat.save()
+
+        const chat = await chat_model.findById(chat_id, {})
+        if(chat) {
+            if(chat.userA.id === my_id) {
+                chat.userA.checked = true
+                chat.userA.socketId = socket.id.toString()
+            } else {
+                chat.userB.checked = true
+                chat.userB.socketId = socket.id.toString()
+            }
+            await chat.save()
+            const user = await account_model.findById(user_id, {requests: 0, socketId: 0, password: 0, refreshToken: 0})
+            socket.emit('get chat', { user, chat })
+        }
+
 
         const user = await account_model.findById(my_id)
-        const chatList = await chat_model.find({_id: { $in: user.chats }}).lean()
-        socket.emit('receive chatlist', chatList.map(item => {
-            const {messages, ...rest} = item
-            return {...rest, message: messages.length ? messages[messages.length - 1] : null}
-        }))
+        const contacts = user?.contacts.map(item => [my_id, item].sort())
+        const requests = user?.requests.map(item => [my_id, item].sort())
+        const userName = await account_model.findById(user_id).lean().username
+        const retData = {
+            category: contacts.includes(chat.between.sort()) ? 'Contacts' : 'Requests',
+            data: {
+                _id: chat._id,
+                userA: chat.userA,
+                userB: chat.userB,
+                lastMessage: chat.messages.length ? chat.messages[chat.messages.length - 1] : null,
+                name: userName,
+                others_id: user_id
+            }
+        }
 
-        socket.emit('get messages', chat)
+        socket.emit('receive read chat', retData)
     })
 
 /*3*/
@@ -153,6 +178,25 @@ io.on('connection', (socket) => {
 /*4*/
     socket.on('disconnect', async () => {
         await account_model.findOneAndUpdate({ socketId: socket.id }, { socketId: null })
+        await chat_model.updateMany(
+            {
+              $or: [
+                { 'userA.socketId': socket.id },
+                { 'userB.socketId': socket.id }
+              ]
+            },
+            [{$set: {
+                'userA.socketId': {
+                    $cond: [{ $eq: ['$userA.socketId', socket.id] },
+                                null, '$userA.socketId']
+                },
+                'userB.socketId': {
+                    $cond: [{ $eq: ['$userB.socketId', socket.id] },
+                                null, '$userB.socketId']
+                }
+            }}],
+            { strict: false }
+        );
     })
 })
 

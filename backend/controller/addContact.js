@@ -37,6 +37,12 @@ try {
         const between = [myAccountId, hisAccountId].sort()
         const response = await Chat_Schema.create({
             between: between,
+            userA: {
+                id: myAccountId
+            },
+            userB: {
+                id: hisAccountId
+            },
             messages: [{
                 sender: myAccountId,
                 message: firstMessage

@@ -2,6 +2,16 @@ const mongoose = require('mongoose')
 
 const Chat_Schema = mongoose.Schema({
     between: [String],
+    userA: {
+        id: {type: String, required: true},
+        checked: {type: Boolean, default: false},
+        socketId: {type: String, default: null}
+    },
+    userB: {
+        id: {type: String, required: true},
+        checked: {type: Boolean, default: false},
+        socketId: {type: String, default: null}
+    },
     started: {
         type: Date,
         default: Date.now

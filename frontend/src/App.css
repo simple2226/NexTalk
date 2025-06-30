@@ -1,10 +1,20 @@
 @import 'tailwindcss';
 
+@keyframes showUp {
+    0% {
+        opacity: 0;
+    }
+    100% {
+        opacity: 1;
+    }
+}
+
 @theme {
     --color-borders: #ffffff38;
     --breakpoint-lg: 950px;
     --breakpoint-md: 550px;
     --breakpoint-sm: 396px;
+    --animate-showUp: showUp .2s linear 0s 1 forwards
 }
 
 html {

@@ -16,25 +16,11 @@ export default function MainLayout() {
     const [addNewContact, setAddNewContact] = useState(false)
     const [newPhone, setNewPhone] = useState('')
     const [firstM, setFirstM] = useState('')
-    const [chatArea, setChatArea] = useState(null)
+    const [chatInfo, setChatInfo] = useState({ chat_id: null, my_id: null, user_id: null })
+    const [socket, setSocket] = useState(null)
     const navigate = useNavigate()
     const requestChatList = async (obj) => {
         setData(obj)
-    }
-
-    const requestChatArea = async (id, others_id) => {
-    try {
-        const response = await axios.post('api/auth/chat', {
-            _id: id,
-            others_id: others_id
-        }, {
-            withCredentials: true
-        })
-        // console.log(response.data)
-        setChatArea(response.data)
-    } catch (error) {
-        console.error(error)
-    }
     }
 
     useEffect(() => {
@@ -44,7 +30,6 @@ export default function MainLayout() {
                 withCredentials: true
             })
             setAccount(response.data)
-
             setVerify(1)
         } catch (error) {
             navigate('/login')
@@ -59,6 +44,7 @@ export default function MainLayout() {
             transports: ['websocket'],
             withCredentials: true
         })
+        setSocket(socketInstance)
         socketInstance.emit('register', account._id.toString())
         socketInstance.on('receive chatlist', requestChatList)
         return () => {
@@ -88,8 +74,8 @@ export default function MainLayout() {
         <div className='relative h-full w-full'>
             <div className='flex'>
                 <PersonDetails addNewContact={addNewContact} setAddNewContact={setAddNewContact}/>
-                <ChatList vars={{ data, setData }} funcs={{ requestChatArea }}/>
-                <ChatArea vars={{ chatArea, setChatArea }}/>
+                <ChatList vars={{ data, account, setChatInfo }}/>
+                <ChatArea account={account} chatInfo={chatInfo} socket={socket}/>
             </div>
             {addNewContact ?
                 <div className='backdrop-blur-md absolute z-[999999] left-0 top-0 text-white h-full w-full flex items-center justify-center'>

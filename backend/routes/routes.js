@@ -14,7 +14,6 @@ const unfollow = require('../controller/unfollow')
 const logout = require('../controller/logout')
 const searchAccounts = require('../controller/searchAccounts')
 const addContact = require('../controller/addContact')
-const getChat = require('../controller/getChat')
 
 // {unauthorised / public}
 router.post('/accounts/add', addAccount)
@@ -28,7 +27,6 @@ router.post('/auth/verify', authorisation, login)
 router.post('/auth/logout', authorisation, logout)
 router.post('/auth/unfollow', authorisation, unfollow)
 router.post('/auth/addContact', authorisation, addContact)
-router.post('/auth/chat', authorisation, getChat)
 router.put('/auth/update-account/:userId', authorisation, updateAccount)
 
 module.exports = router

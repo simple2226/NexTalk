@@ -1,10 +1,14 @@
 const mongoose = require('mongoose')
 
 const Account_Schema = mongoose.Schema({
+    createdOn: {
+        type: Date,
+        default: Date.now
+    },
     username: {
         type: String,
         required: true,
-        maxLength: 50
+        maxLength: 100
     },
     phoneNo: {
         type: String,
