@@ -19,9 +19,6 @@ export default function MainLayout() {
     const [chatInfo, setChatInfo] = useState({ chat_id: null, my_id: null, user_id: null })
     const [socket, setSocket] = useState(null)
     const navigate = useNavigate()
-    const requestChatList = async (obj) => {
-        setData(obj)
-    }
 
     useEffect(() => {
         const verify = async () => {
@@ -46,9 +43,28 @@ export default function MainLayout() {
         })
         setSocket(socketInstance)
         socketInstance.emit('register', account._id.toString())
+
+        const requestChatList = (obj) => { setData(obj) }
+        const receiveUpdatedChatList = (update) => {
+            setData(prev => {
+                if (!prev) return prev
+                return {
+                    Contacts: prev.Contacts.map(item => 
+                        item._id === update._id ? {...item, ...update} : item
+                    ),
+                    Requests: prev.Requests.map(item => 
+                        item._id === update._id ? {...item, ...update} : item
+                    )
+                }
+            })
+        }
+
         socketInstance.on('receive chatlist', requestChatList)
+        socketInstance.on('receive updated chatList', receiveUpdatedChatList)
+        
         return () => {
             socketInstance.off('receive chatlist', requestChatList)
+            socketInstance.off('receive updated chatList', receiveUpdatedChatList)
             socketInstance.disconnect()
         }
     }, [verify])
@@ -74,7 +90,7 @@ export default function MainLayout() {
         <div className='relative h-full w-full'>
             <div className='flex'>
                 <PersonDetails addNewContact={addNewContact} setAddNewContact={setAddNewContact}/>
-                <ChatList vars={{ data, account, setChatInfo }}/>
+                <ChatList data={data} account={account} setChatInfo={setChatInfo}/>
                 <ChatArea account={account} chatInfo={chatInfo} socket={socket}/>
             </div>
             {addNewContact ?

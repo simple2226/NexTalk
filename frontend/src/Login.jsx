@@ -47,7 +47,7 @@ const login = async () => {
 }
 return (
     show ?
-    <div className='text-white flex flex-col items-center justify-center h-[100vh] w-full'>
+        <div className='text-white flex flex-col items-center justify-center h-[100vh] w-full'>
             <div className='transition ease-in-out duration-300 hover:shadow-[0_14px_20px_5px_#ffffffce] relative p-12 flex flex-col gap-5 border border-borders rounded-sm'>
                 <div className='absolute left-4 -top-7 text-[2rem] text-[#ffffffb0] bg-black italic'>Login to Account</div>
                 <div className='relative flex flex-col items-start gap-2'>

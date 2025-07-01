@@ -16,6 +16,9 @@ import ChatIcon from './assets/ChatIcon'
 
 export default function ChatArea({account, chatInfo, socket}) {
     const [data, setData] = useState(null)
+    const dataRef = useRef(null)
+    const [status, setStatus] = useState('Offline')
+    const [inTheChat, setInTheChat] = useState(false)
     const [input, setInput] = useState('')
     const [numSelected, setNumSelected] = useState(0)
     const [openInfo, setOpenInfo] = useState(false)
@@ -24,24 +27,33 @@ export default function ChatArea({account, chatInfo, socket}) {
     const buttonRef = useRef(null)
     const pickerRef = useRef(null)
     const chatAreaRef = useRef(null)
-
-    const getChatReady = (chat) => {
-        setArr(chat.messages)
-    }
     
     useEffect(() => {
         if(!socket) return
         const socketInstance = socket
-        socketInstance.on('get chat', (data) => {
-            setData(data)
-        })
+        const getChat = (data) => { setData(data) }
+        const inTheChaTfunc = (inTheChat) => { setInTheChat(inTheChat) }
+        const currentStatus = (status) => { setStatus(status) }
+        const receiveMessage = (message) => {
+            if(dataRef.current && message.doc_id === dataRef.current.chat._id)
+                setArr(prev => [...prev, message])
+        }
+        socketInstance.on('get chat', getChat)
+        socketInstance.on('in the chat?', inTheChaTfunc)
+        socketInstance.on('current status', currentStatus)
+        socketInstance.on('receive message', receiveMessage)
+
         return () => {
-            socketInstance.off()
+            socketInstance.off('get chat', getChat)
+            socketInstance.off('in the chat?', inTheChaTfunc)
+            socketInstance.off('current status', currentStatus)
+            socketInstance.off('receive message', receiveMessage)
         }
     }, [socket])
 
     useEffect(() => {
         if(!data) return
+        dataRef.current = data
         setArr(data.chat.messages)
     }, [data])
 
@@ -51,6 +63,8 @@ export default function ChatArea({account, chatInfo, socket}) {
         setNumSelected(0)
         setArr([])
         setData(null)
+        setInTheChat(false)
+        setStatus('Offline')
 
         if(socket && chatInfo.chat_id && chatInfo.my_id && chatInfo.user_id)
             socket.emit('request chat', { prev_chat_id: data ? data.chat._id : null, ...chatInfo })
@@ -106,7 +120,7 @@ export default function ChatArea({account, chatInfo, socket}) {
             top: chatAreaRef.current.scrollHeight,
             behavior: 'smooth'
         })
-    }, [chatAreaRef.current])
+    }, [arr.length, chatAreaRef.current])
 
     return ((chatInfo.chat_id && chatInfo.my_id && chatInfo.user_id) ? (
         data ?
@@ -115,7 +129,10 @@ export default function ChatArea({account, chatInfo, socket}) {
                 {!numSelected ? (
                     <><div className='gap-4 flex items-center'>
                         <Pfp size='45px' url='url(https://scontent.cdninstagram.com/v/t51.75761-19/505432788_18081790582816553_1268032086364561825_n.jpg?stp=dst-jpg_s206x206_tt6&_nc_cat=110&ccb=1-7&_nc_sid=bf7eb4&_nc_ohc=qmxJ_5-UinEQ7kNvwFCNS_A&_nc_oc=AdmIXu8mEQhIitYQtvtet_bTHTYZYT-nDXVoVc1u6sHprRDAe9Mtkdb0dvFEXxlZcOkJhMwLF8s1XxaH0SolAfNk&_nc_zt=24&_nc_ht=scontent.cdninstagram.com&_nc_gid=SKVnChxPP1rv6otItJg7jw&oh=00_AfP9fDjH-Ct--T7FE4yF2sMTuvlun4giq5Ucs0_IEqA_7Q&oe=68585D75)'/>
-                        <div className='hidden lg:block md:hidden sm:hidden text-white text-[1.2rem] font-semibold'>{data.user.username}</div>
+                        <div className='flex-col items-start'>
+                            <div className='text-white text-[1.2rem] font-semibold'>{data.user.username}</div>
+                            <div className={`text-start transition ease-linear duration-200 ${inTheChat ? 'opacity-100' : 'size-0 opacity-0'} text-[.7rem] text-[#ffffffb6] text-nowrap`}>Currently in the chat</div>
+                        </div>
                     </div>
                     <div className='flex gap-4 items center justify-self-end'>
                         <button className='active:opacity-55 cursor-pointer'><VoiceChatIcon size='24'/></button>
@@ -216,21 +233,12 @@ export default function ChatArea({account, chatInfo, socket}) {
                         placeholder='Message...'
                         className='text-white w-full outline-1'
                     />
-                    <button onClick={() => {
-                        // console.log(input)
-                        // if(input.length == 0) return
-                        // setArr(prev => {
-                        //     let temp = [...prev]
-                        //     temp.push({
-                        //         message_id: prev.length + 1,
-                        //         sender: "Alice",
-                        //         timestamp: Date(),
-                        //         message: input,
-                        //         selected: false
-                        //     })
-                        //     return temp
-                        // })
-                        // setInput('')
+                    <button onClick={e => {
+                        if(input.length == 0) return
+                        e.target.textContent = 'Sending'
+                        socket.emit('send message', {sender_id: account._id, receiver_id: chatInfo.user_id, chat_id: data.chat._id, message: input})
+                        e.target.textContent = 'Send'
+                        setInput('')
                     }} className='text-[#3797F0] px-2 cursor-pointer active:opacity-55'>Send</button>
                 </div>
             </div>
@@ -257,8 +265,8 @@ export default function ChatArea({account, chatInfo, socket}) {
                         })()}</b></h1>
                     </div>
                     <div className='px-[1px] flex items-center w-[80%] gap-2 text-[.9rem]'>
-                        <div className='size-[10px] rounded-full bg-green-400'></div>
-                        <h1 className='opacity-70'>Current Status &nbsp;<b>-</b></h1><h1 className='font-bold'>Online</h1>
+                        <div className={`size-[10px] rounded-full ${status === 'Online' ? 'bg-[#05df72b6]' : 'bg-gray-500'}`}></div>
+                        <h1 className='opacity-70'>Current Status &nbsp;<b>-</b></h1><h1 className='font-bold'>{status}</h1>
                     </div>
                     <div className='px-[1px] flex items-center w-[80%] gap-2 text-[.9rem]'>
                         <Mutuals/>

@@ -5,11 +5,13 @@ const Chat_Schema = mongoose.Schema({
     userA: {
         id: {type: String, required: true},
         checked: {type: Boolean, default: false},
+        numNotRead: {type: Number, default: 0},
         socketId: {type: String, default: null}
     },
     userB: {
         id: {type: String, required: true},
         checked: {type: Boolean, default: false},
+        numNotRead: {type: Number, default: 0},
         socketId: {type: String, default: null}
     },
     started: {
@@ -21,6 +23,7 @@ const Chat_Schema = mongoose.Schema({
         default: Date.now
     },
     messages: [{
+        doc_id: {type: String, required: true},
         sender: {type: String, required: true},
         message: {type: mongoose.Schema.Types.Mixed, required: true},
         sentWhen: {type: Date, default: Date.now},

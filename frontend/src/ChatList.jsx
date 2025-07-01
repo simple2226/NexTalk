@@ -4,8 +4,7 @@ import Pfp from './assets/Pfp'
 import { io } from 'socket.io-client'
 import CloseIcon from './assets/CloseIcon'
 
-export default function ChatList(attrs) {
-    const { data, account, setChatInfo } = attrs.vars
+export default function ChatList({data, account, setChatInfo}) {
     const [openRequests, setOpenRequests] = useState(false)
     return (
         !openRequests ?
@@ -20,13 +19,23 @@ export default function ChatList(attrs) {
             </div>
             <div className='mt-3 relative flex flex-col overflow-y-auto w-full h-full'>
             {data ?                
-                (data.Contacts.map((item, index) =>{
-                    return <div onClick={() => setChatInfo({ chat_id: item._id, my_id: account._id, user_id: item.others_id })} key={index} className='px-4 gap-3 flex items-center w-full min-h-[75px] hover:bg-[#ffffff17] cursor-pointer'>
+                (data.Contacts.sort((a, b) => new Date(b.lastUpdated) - new Date(a.lastUpdated)).map((item, index) => {
+                    return <div onClick={() => setChatInfo({ chat_id: item._id, my_id: account._id, user_id: item.others_id })} key={index} className='relative px-4 gap-3 flex items-center w-full min-h-[75px] hover:bg-[#ffffff17] cursor-pointer'>
                         <Pfp size='40px' url='url(https://scontent.cdninstagram.com/v/t51.75761-19/505432788_18081790582816553_1268032086364561825_n.jpg?stp=dst-jpg_s206x206_tt6&_nc_cat=110&ccb=1-7&_nc_sid=bf7eb4&_nc_ohc=qmxJ_5-UinEQ7kNvwFCNS_A&_nc_oc=AdmIXu8mEQhIitYQtvtet_bTHTYZYT-nDXVoVc1u6sHprRDAe9Mtkdb0dvFEXxlZcOkJhMwLF8s1XxaH0SolAfNk&_nc_zt=24&_nc_ht=scontent.cdninstagram.com&_nc_gid=SKVnChxPP1rv6otItJg7jw&oh=00_AfP9fDjH-Ct--T7FE4yF2sMTuvlun4giq5Ucs0_IEqA_7Q&oe=68585D75)'/>
                         <div className='flex flex-col items-start'>
                             <div className='text-white text-[1rem] font-semibold'>{item.name}</div>
-                            <div className='text-[#ffffff6c] text-[.9rem]'>{item.lastMessage.message}</div>
+                            <div className='text-[#ffffff6c] text-[.9rem]'>{item.lastMessage ? item.lastMessage.message : "Start the conversation!"}</div>
                         </div>
+                        {(() => {
+                            if(item.userA.id === account._id) return item.userA.numNotRead
+                            if(item.userB.id === account._id) return item.userB.numNotRead
+                        })() > 0 ?
+                        <div className='flex items-center justify-center absolute right-5 bg-[#3797F0] rounded-full size-[1.5rem] p-1 text-[.8rem] text-white'>
+                            { item.userA.id === account._id ? item.userA.numNotRead : item.userB.numNotRead }
+                        </div>
+                        :
+                        <></>
+                        }
                     </div>
                 }
                 ))

@@ -48,16 +48,27 @@ io.on('connection', (socket) => {
         const user = await account_model.findById(my_id)
         user.socketId = socket.id
         await user.save()
+
         const contacts = user.contacts.map(item => [my_id, item].sort())
+
+        const docs = await chat_model.find({ between: { $in: contacts } }, { userA: 1, userB: 1 })
+        docs.forEach(doc => {
+            if(doc.userA.id === my_id) {
+                if(doc.userB.socketId) io.to(doc.userB.socketId).emit('current status', 'Online')
+            } else {
+                if(doc.userA.socketId) io.to(doc.userA.socketId).emit('current status', 'Online')
+            }
+        })
+
         const requests = user.requests.map(item => [my_id, item].sort())
         const [Contacts, Requests] = await Promise.all([
             chat_model.aggregate([
                 { $match: { between: { $in: contacts } } },
-                { $project: { _id: 1, between: 1, userA: 1, userB: 1, lastMessage: { $arrayElemAt: ['$messages', -1] } } }
+                { $project: { _id: 1, between: 1, userA: 1, userB: 1, lastUpdated: 1, lastMessage: { $ifNull: [ { $arrayElemAt: ['$messages', -1] }, null ] } } }
             ]),
             chat_model.aggregate([
                 { $match: { between: { $in: requests } } },
-                { $project: { _id: 1, between: 1, userA: 1, userB: 1, lastMessage: { $arrayElemAt: ['$messages', -1] } } }
+                { $project: { _id: 1, between: 1, userA: 1, userB: 1, lastUpdated: 1, lastMessage: { $ifNull: [ { $arrayElemAt: ['$messages', -1] }, null ] } } }
             ])
         ])
 
@@ -81,6 +92,8 @@ io.on('connection', (socket) => {
             chat.others_id = notMyId(chat)
         })
 
+
+
         io.to(user.socketId).emit('receive chatlist', { Contacts, Requests })
     })
 
@@ -88,10 +101,15 @@ io.on('connection', (socket) => {
     socket.on('request chat', async ({prev_chat_id, chat_id, my_id, user_id}) => {
         if (prev_chat_id) {
             const prevChat = await chat_model.findById(prev_chat_id)
-            if(prevChat.userA.id === my_id)
+            if(prevChat.userA.id === my_id) {
                 prevChat.userA.socketId = null
-            else
+                if(prevChat.userB.socketId)
+                    io.to(prevChat.userB.socketId).emit('in the chat?', false)
+            } else {
                 prevChat.userB.socketId = null
+                if(prevChat.userA.socketId)
+                    io.to(prevChat.userA.socketId).emit('in the chat?', false)
+            }
             await prevChat.save()
         }
 
@@ -99,34 +117,43 @@ io.on('connection', (socket) => {
         if(chat) {
             if(chat.userA.id === my_id) {
                 chat.userA.checked = true
+                chat.userA.numNotRead = 0
                 chat.userA.socketId = socket.id.toString()
+                if(chat.userB.socketId) {
+                    io.to(chat.userB.socketId).emit('in the chat?', true)
+                    socket.emit('in the chat?', true)
+                }
             } else {
                 chat.userB.checked = true
+                chat.userB.numNotRead = 0
                 chat.userB.socketId = socket.id.toString()
+                if(chat.userA.socketId) {
+                    io.to(chat.userA.socketId).emit('in the chat?', true)
+                    socket.emit('in the chat?', true)
+                }
             }
             await chat.save()
-            const user = await account_model.findById(user_id, {requests: 0, socketId: 0, password: 0, refreshToken: 0})
-            socket.emit('get chat', { user, chat })
+            const other_user = await account_model.findById(user_id, {requests: 0, password: 0, refreshToken: 0})
+            if(other_user.socketId) socket.emit('current status', 'Online')
+            socket.emit('get chat', { user: other_user, chat })
         }
-
-
+        
+        
         const user = await account_model.findById(my_id)
         const contacts = user?.contacts.map(item => [my_id, item].sort())
         const requests = user?.requests.map(item => [my_id, item].sort())
         const userName = await account_model.findById(user_id).lean().username
         const retData = {
-            category: contacts.includes(chat.between.sort()) ? 'Contacts' : 'Requests',
-            data: {
-                _id: chat._id,
-                userA: chat.userA,
-                userB: chat.userB,
-                lastMessage: chat.messages.length ? chat.messages[chat.messages.length - 1] : null,
-                name: userName,
-                others_id: user_id
-            }
+            _id: chat._id,
+            userA: chat.userA,
+            userB: chat.userB,
+            lastMessage: chat.messages.length ? chat.messages[chat.messages.length - 1] : null,
+            name: userName,
+            lastUpdated: chat.lastUpdated,
+            others_id: user_id
         }
 
-        socket.emit('receive read chat', retData)
+        socket.emit('receive updated chatList', retData)
     })
 
 /*3*/
@@ -134,34 +161,62 @@ io.on('connection', (socket) => {
         const from = await account_model.findById(sender_id)
         const to = await account_model.findById(receiver_id)
         if(to) {
-
             const chat = await chat_model.findById(chat_id)
+            chat.lastUpdated = Date.now()
             chat.messages.push({
+                doc_id: chat._id,
                 sender: sender_id,
-                text: message,
+                message: message,
             })
-            if(chat.userA._id === receiver_id) {
-                chat.userA.checked = false
+            if(chat.userA.id === receiver_id) {
+                if(!chat.userA.socketId) {
+                    chat.userA.checked = false
+                    chat.userA.numNotRead += 1
+                }
             } else {
-                chat.userB.checked = false
+                if(!chat.userB.socketId) {
+                    chat.userB.checked = false
+                    chat.userB.numNotRead += 1
+                }
             }
             chat.lastUpdated = Date.now()
             await chat.save()
+ 
+            const myContacts = from.contacts.map(item => [sender_id, item].sort())
+            socket.emit('receive updated chatList', {
+                _id: chat_id,
+                userA: chat.userA,
+                userB: chat.userB,
+                lastMessage: chat.messages.length ? chat.messages[chat.messages.length - 1] : null,
+                name: to.username,
+                lastUpdated: chat.lastUpdated,
+                others_id: receiver_id
+            })
 
-            const from_chatList = await chat_model.find({_id: { $in: from.chats }}).lean()
-            io.to(from.socketId).emit('receive message', {message: chat.messages[chat.messages.length - 1], chatList: from_chatList.map(item => {
-                const {messages, ...rest} = item
-                return {...rest, message: messages.length ? messages[messages.length - 1] : null}
-            })})
-            
-            if(to.socketId) {
-                const to_chatList = await chat_model.find({_id: { $in: to.chats }}).lean()
-                io.to(to.socketId).emit('receive message', {message: chat.messages[chat.messages.length - 1], chatList: to_chatList.map(item => {
-                    const {messages, ...rest} = item
-                    return {...rest, message: messages.length ? messages[messages.length - 1] : null}
-                })})
+            if (to.socketId) {
+                const hisContacts = to.contacts.map(item => [receiver_id, item].sort())
+                io.to(to.socketId).emit('receive updated chatList', {
+                    _id: chat_id,
+                    userA: chat.userA,
+                    userB: chat.userB,
+                    lastMessage: chat.messages.length ? chat.messages[chat.messages.length - 1] : null,
+                    name: from.username,
+                    lastUpdated: chat.lastUpdated,
+                    others_id: sender_id
+                })
             }
+            
+            socket.emit('receive message', chat.messages[chat.messages.length - 1])
 
+            if(chat.userA.id === receiver_id) {
+                if(chat.userA.socketId) {
+                    io.to(chat.userA.socketId).emit('receive message', chat.messages[chat.messages.length - 1])
+                }
+            } else {
+                if(chat.userB.socketId) {
+                    io.to(chat.userB.socketId).emit('receive message', chat.messages[chat.messages.length - 1])
+                }
+            }
         }
     })
 
@@ -177,26 +232,42 @@ io.on('connection', (socket) => {
     
 /*4*/
     socket.on('disconnect', async () => {
-        await account_model.findOneAndUpdate({ socketId: socket.id }, { socketId: null })
-        await chat_model.updateMany(
-            {
-              $or: [
+        const user = await account_model.findOne({ socketId: socket.id })
+        if(user) {
+            user.socketId = null
+            await user.save()
+
+            const contacts = user.contacts.map(item => [user._id.toString(), item].sort())
+            const docs = await chat_model.find({ between: { $in: contacts } }, { userA: 1, userB: 1 })
+            docs.forEach(doc => {
+                if(doc.userA.id === user._id.toString()) {
+                    if(doc.userB.socketId) io.to(doc.userB.socketId).emit('current status', 'Offline')
+                } else {
+                    if(doc.userA.socketId) io.to(doc.userA.socketId).emit('current status', 'Offline')
+                }
+            })
+        }
+
+        const anyLastOpenedChat = await chat_model.findOne(
+            {$or: [
                 { 'userA.socketId': socket.id },
                 { 'userB.socketId': socket.id }
-              ]
-            },
-            [{$set: {
-                'userA.socketId': {
-                    $cond: [{ $eq: ['$userA.socketId', socket.id] },
-                                null, '$userA.socketId']
-                },
-                'userB.socketId': {
-                    $cond: [{ $eq: ['$userB.socketId', socket.id] },
-                                null, '$userB.socketId']
-                }
-            }}],
-            { strict: false }
-        );
+            ]}
+        )
+
+        if(anyLastOpenedChat) {
+            if(anyLastOpenedChat.userA.socketId === socket.id) {
+                anyLastOpenedChat.userA.socketId = null
+                if(anyLastOpenedChat.userB.socketId)
+                    io.to(anyLastOpenedChat.userB.socketId).emit('in the chat?', false)
+            } else {
+                anyLastOpenedChat.userB.socketId = null
+                if(anyLastOpenedChat.userA.socketId)
+                    io.to(anyLastOpenedChat.userA.socketId).emit('in the chat?', false)
+            }
+            await anyLastOpenedChat.save()
+        }
+
     })
 })
 
