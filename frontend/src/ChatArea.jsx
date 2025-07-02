@@ -23,7 +23,6 @@ export default function ChatArea({account, chatInfo, socket}) {
     const [numSelected, setNumSelected] = useState(0)
     const [openInfo, setOpenInfo] = useState(false)
     const [arr, setArr] = useState([])
-    const [seen, setSeen] = useState(null)
     const [isRequested, setIsRequested] = useState(false)
     const inputRef = useRef(null)
     const buttonRef = useRef(null)
@@ -38,7 +37,19 @@ export default function ChatArea({account, chatInfo, socket}) {
             setIsRequested(data.request)
         }
         const inTheChatfunc = (inTheChat) => { setInTheChat(inTheChat) }
-        const seen = (seen) => { setSeen(seen) }
+        const seen = (seenSet) => {
+            const s = new Set(seenSet)
+            setArr(prev => {
+                const newArr = [...prev]
+                for(let i = newArr.length - 1; i >= 0 && s.size > 0; i--) {
+                    if(s.has(newArr[i]._id)) {
+                        newArr[i] = { ...newArr[i], seen: true }
+                        s.delete(newArr[i]._id)
+                    }
+                }
+                return newArr
+            })
+        }
         const currentStatus = (status) => { setStatus(status) }
         const receiveMessage = (message) => {
             if(dataRef.current && message.doc_id === dataRef.current.chat._id)
@@ -63,18 +74,8 @@ export default function ChatArea({account, chatInfo, socket}) {
         if(!data) return
         dataRef.current = data
         setArr(data.chat.messages)
-        const user = data.chat.userA.id === account._id ? 'userB' : 'userA'
-        setSeen(data.chat[user].checked)
     }, [data])
 
-    useEffect(() => {
-        if(seen === true && chatAreaRef.current) {
-            chatAreaRef.current.scrollTo({
-                top: chatAreaRef.current.scrollHeight,
-                behavior: 'smooth'
-            })
-        }
-    }, [seen])
 
     useEffect(() => {
         setOpenInfo(false)
@@ -85,7 +86,6 @@ export default function ChatArea({account, chatInfo, socket}) {
         setInTheChat(false)
         setStatus('Offline')
         setIsRequested(false)
-        setSeen(null)
 
         if(socket && chatInfo.chat_id && chatInfo.my_id && chatInfo.user_id)
             socket.emit('request chat', { prev_chat_id: data ? data.chat._id : null, ...chatInfo })
@@ -256,10 +256,18 @@ export default function ChatArea({account, chatInfo, socket}) {
                                     hour12: true
                                 }).toString()
                             }</h1>
-                            {seen && index === arr.length - 1 && item.sender === account._id ?
-                                <div className='text-white/50 text-[0.9rem]'>Seen</div> :
-                                <></>
-                            }
+                            {(() => {
+                                if(index === arr.length - 1 && item.sender === account._id && item.seen === true) {
+                                    return <div className='text-white/50 text-[0.9rem]'>Seen</div>
+                                    const dtb = chatAreaRef.current.scrollHeight - chatAreaRef.current.scrollTop - chatAreaRef.current.clientHeight
+                                    if(dtb <= 25) {
+                                        chatAreaRef.current.scrollTo({
+                                            top: chatAreaRef.current.scrollHeight,
+                                            behavior: 'smooth'
+                                        })
+                                    }
+                                }
+                            })()}
                         </div>
                     )
                 )}
@@ -282,7 +290,6 @@ export default function ChatArea({account, chatInfo, socket}) {
                         if(input.length == 0) return
                         socket.emit('send message', {sender_id: account._id, receiver_id: chatInfo.user_id, chat_id: data.chat._id, message: input.trim()})
                         setInput('')
-                        setSeen(false)
                     }} className='text-[#3797F0] px-2 cursor-pointer active:opacity-55'>Send</button>
                 </div>
                 :

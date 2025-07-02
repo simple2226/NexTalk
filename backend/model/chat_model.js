@@ -28,10 +28,10 @@ const Chat_Schema = mongoose.Schema({
         message: {type: mongoose.Schema.Types.Mixed, required: true},
         sentWhen: {type: Date, default: Date.now},
         seen: {type: Boolean, default: false},
-        edited: {
-            is: {type: Boolean, default: false},
-            when: {type: Date, default: Date.now}
-        }
+        edited: {type: Boolean, default: false},
+        deletedForBoth: {type: Boolean, default: false},
+        deletedForOne: [String],
+        replyFor: {type: String, default: null}
     }]
 })
 

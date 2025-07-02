@@ -99,52 +99,42 @@ io.on('connection', (socket) => {
 
 /*2*/
     socket.on('request chat', async ({ prev_chat_id, chat_id, my_id, user_id, request }) => {
+        let UTU
         if (prev_chat_id) {
             const prevChat = await chat_model.findById(prev_chat_id)
-            if(prevChat.userA.id === my_id) {
-                prevChat.userA.socketId = null
-                if(prevChat.userB.socketId)
-                    io.to(prevChat.userB.socketId).emit('in the chat?', false)
-            } else {
-                prevChat.userB.socketId = null
-                if(prevChat.userA.socketId)
-                    io.to(prevChat.userA.socketId).emit('in the chat?', false)
-            }
+
+            UTU = prevChat.userA.id === my_id ? ['userA', 'userB'] : ['userB', 'userA']
+            prevChat[UTU[0]].socketId = null
+            if(prevChat[UTU[1]].socketId) io.to(prevChat[UTU[1]].socketId).emit('in the chat?', false)
+
             await prevChat.save()
         }
 
         const chat = await chat_model.findById(chat_id, {})
         if(chat) {
-            if(chat.userA.id === my_id) {
-                chat.userA.checked = true
-                chat.userA.numNotRead = 0
-                chat.userA.socketId = socket.id.toString()
-                if(chat.userB.socketId) {
-                    io.to(chat.userB.socketId).emit('in the chat?', true)
-                    socket.emit('in the chat?', true)
-                }
-            } else {
-                chat.userB.checked = true
-                chat.userB.numNotRead = 0
-                chat.userB.socketId = socket.id.toString()
-                if(chat.userA.socketId) {
-                    io.to(chat.userA.socketId).emit('in the chat?', true)
-                    socket.emit('in the chat?', true)
-                }
+            UTU = chat.userA.id === my_id ? ['userA', 'userB'] : ['userB', 'userA']
+            chat[UTU[0]].checked = true
+            chat[UTU[0]].numNotRead = 0
+            chat[UTU[0]].socketId = socket.id.toString()
+            if(chat[UTU[1]].socketId) {
+                io.to(chat[UTU[1]].socketId).emit('in the chat?', true)
+                socket.emit('in the chat?', true)
             }
+            
+            const seenTheMessages = new Set()
+            for(let i = chat.messages.length - 1; i >= 0 && chat.messages[i].sender === user_id && chat.messages[i].seen === false; i--) {
+                chat.messages[i].seen = true
+                seenTheMessages.add(chat.messages[i]._id.toString())
+                // console.log(chat.messages[i]._id.toString())
+            }
+
             await chat.save()
             const other_user = await account_model.findById(user_id, {requests: 0, password: 0, refreshToken: 0})
             if(other_user.socketId) socket.emit('current status', 'Online')
             socket.emit('get chat', { user: other_user, chat, request })
-            if(chat.userA.id === my_id) {
-                if(chat.userB.socketId) {
-                    io.to(chat.userB.socketId).emit('seen?', true)
-                }
-            } else {
-                if(chat.userA.socketId) {
-                    io.to(chat.userA.socketId).emit('seen?', true)
-                }
-            }
+
+            UTU = chat.userA.id === my_id ? 'userB' : 'userA'
+            if(chat[UTU].socketId) io.to(chat[UTU].socketId).emit('seen?', [...seenTheMessages])
         }
         
         const userName = await account_model.findById(user_id).lean().username
@@ -165,26 +155,26 @@ io.on('connection', (socket) => {
     socket.on('send message', async ({sender_id, receiver_id, chat_id, message}) => {
         const from = await account_model.findById(sender_id)
         const to = await account_model.findById(receiver_id)
+        let UTU
         if(to) {
             const chat = await chat_model.findById(chat_id)
-            chat.lastUpdated = Date.now()
+
+            UTU = chat.userA.id === receiver_id ? 'userA' : 'userB'
+            if(!chat[UTU].socketId) {
+                chat[UTU].checked = false
+                chat[UTU].numNotRead += 1
+            }
+
+            const seen = chat[UTU].socketId ? true : false
             chat.messages.push({
                 doc_id: chat._id,
                 sender: sender_id,
                 message: message,
+                seen: seen
             })
-            if(chat.userA.id === receiver_id) {
-                if(!chat.userA.socketId) {
-                    chat.userA.checked = false
-                    chat.userA.numNotRead += 1
-                }
-            } else {
-                if(!chat.userB.socketId) {
-                    chat.userB.checked = false
-                    chat.userB.numNotRead += 1
-                }
-            }
+
             chat.lastUpdated = Date.now()
+
             await chat.save()
  
             socket.emit('receive updated chatList', {
@@ -197,7 +187,7 @@ io.on('connection', (socket) => {
                 others_id: receiver_id
             })
 
-            if (to.socketId) {
+            if(to.socketId) {
                 io.to(to.socketId).emit('receive updated chatList', {
                     _id: chat_id,
                     userA: chat.userA,
@@ -211,17 +201,9 @@ io.on('connection', (socket) => {
             
             socket.emit('receive message', chat.messages[chat.messages.length - 1])
 
-            if(chat.userA.id === receiver_id) {
-                if(chat.userA.socketId) {
-                    io.to(chat.userA.socketId).emit('receive message', chat.messages[chat.messages.length - 1])
-                    socket.emit('seen?', true)
-                }
-            } else {
-                if(chat.userB.socketId) {
-                    io.to(chat.userB.socketId).emit('receive message', chat.messages[chat.messages.length - 1])
-                    socket.emit('seen?', true)
-                }
-            }
+            UTU = chat.userA.id === receiver_id ? 'userA' : 'userB'
+            if(chat[UTU].socketId)
+                io.to(chat[UTU].socketId).emit('receive message', chat.messages[chat.messages.length - 1])
         }
     })
 
