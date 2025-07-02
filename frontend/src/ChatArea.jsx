@@ -20,7 +20,8 @@ export default function ChatArea({account, chatInfo, socket}) {
     const [status, setStatus] = useState('Offline')
     const [inTheChat, setInTheChat] = useState(false)
     const [input, setInput] = useState('')
-    const [numSelected, setNumSelected] = useState(0)
+    const [selecteds, setSelecteds] = useState([])
+    const [deleteMessagesPopup, setDeleteMessagesPopup] = useState(false)
     const [openInfo, setOpenInfo] = useState(false)
     const [arr, setArr] = useState([])
     const [isRequested, setIsRequested] = useState(false)
@@ -73,19 +74,20 @@ export default function ChatArea({account, chatInfo, socket}) {
     useEffect(() => {
         if(!data) return
         dataRef.current = data
-        setArr(data.chat.messages)
+        setArr(data.chat.messages.map(item => { return { ...item, selected: false } }))
     }, [data])
 
 
     useEffect(() => {
         setOpenInfo(false)
         setInput('')
-        setNumSelected(0)
+        setSelecteds([])
         setArr([])
         setData(null)
         setInTheChat(false)
         setStatus('Offline')
         setIsRequested(false)
+        setDeleteMessagesPopup(false)
 
         if(socket && chatInfo.chat_id && chatInfo.my_id && chatInfo.user_id)
             socket.emit('request chat', { prev_chat_id: data ? data.chat._id : null, ...chatInfo })
@@ -152,11 +154,15 @@ export default function ChatArea({account, chatInfo, socket}) {
         })
     }, [arr.length, chatAreaRef.current])
 
+    useEffect(() => {
+        console.log(selecteds)
+    }, [selecteds])
+
     return ((chatInfo.chat_id && chatInfo.my_id && chatInfo.user_id) ? (
         data ?
         <div className={`animate-showUp relative flex flex-col h-[100vh] w-[calc(100vw-397px)] min-w-[277px]`}>
-            <div className={`${numSelected ? 'bg-[#ffffff11]' : ''} px-4 flex justify-between items-center w-full min-h-[75px] border-b border-borders`}>
-                {!numSelected ? (
+            <div className={`${selecteds.length ? 'bg-[#ffffff11]' : ''} px-4 flex justify-between items-center w-full min-h-[75px] border-b border-borders`}>
+                {!selecteds.length ? (
                     <><div className='gap-4 flex items-center'>
                         <Pfp size='45px' url='url(https://scontent.cdninstagram.com/v/t51.75761-19/505432788_18081790582816553_1268032086364561825_n.jpg?stp=dst-jpg_s206x206_tt6&_nc_cat=110&ccb=1-7&_nc_sid=bf7eb4&_nc_ohc=qmxJ_5-UinEQ7kNvwFCNS_A&_nc_oc=AdmIXu8mEQhIitYQtvtet_bTHTYZYT-nDXVoVc1u6sHprRDAe9Mtkdb0dvFEXxlZcOkJhMwLF8s1XxaH0SolAfNk&_nc_zt=24&_nc_ht=scontent.cdninstagram.com&_nc_gid=SKVnChxPP1rv6otItJg7jw&oh=00_AfP9fDjH-Ct--T7FE4yF2sMTuvlun4giq5Ucs0_IEqA_7Q&oe=68585D75)'/>
                         <div className='flex-col items-start'>
@@ -182,22 +188,16 @@ export default function ChatArea({account, chatInfo, socket}) {
                     :
                     (<><div>
                         <button onClick={() => {
-                            // setChatArea(prev => {
-                            //     let temp = JSON.parse(JSON.stringify(prev))
-                            //     temp.Chat.messages.forEach(m => {
-                            //         m.selected = false
-                            //     })
-                            //     return temp
-                            // })
-                            // setNumSelected(0)
+                            setSelecteds([])
+                            setArr(prev => prev.map(e => { return { ...e, selected: false } }))
                         }} className='active:opacity-55'><CloseIcon/></button>
                     </div>
                     <div className='flex gap-4 items center justify-self-end'>
-                        {numSelected == 1 ? <>
+                        {selecteds.length == 1 ? <>
                         <button className='active:opacity-55'><ReplyIcon/></button>
                         <button className='active:opacity-55'><CopyIcon/></button>
                         </> : <></>}
-                        <button className='active:opacity-55'><DeleteIcon/></button>
+                        <button onClick={() => setDeleteMessagesPopup(true)} className='active:opacity-55'><DeleteIcon/></button>
                     </div></>)
                 }
             </div>
@@ -205,48 +205,37 @@ export default function ChatArea({account, chatInfo, socket}) {
             <div ref={chatAreaRef} className='pt-3 flex flex-col gap-2 overflow-y-auto w-full h-full'>
                 {arr.map((item, index) => (
                         <div onClick={() => {
-                            // if(numSelected) {
-                            //     if(!item.selected) {
-                            //         setNumSelected(prev => prev + 1)
-                            //         setChatArea(prev => {
-                            //                 // prev.map((item, i) => 
-                            //                 //     i === index ? { ...item, selected: true } : item
-                            //                 // )
-                            //                 let temp = JSON.parse(JSON.stringify(prev))
-                            //                 temp.Chat.messages[index].selected = true
-                            //                 return temp
-                            //             }
-                            //         )
-                            //     } else {
-                            //         setNumSelected(prev => prev - 1)
-                            //         setChatArea(prev => {
-                            //                 // prev.map((item, i) => 
-                            //                 //     i === index ? { ...item, selected: false } : item
-                            //                 // )
-                            //                 let temp = JSON.parse(JSON.stringify(prev))
-                            //                 temp.Chat.messages[index].selected = false
-                            //                 return temp
-                            //             }
-                            //         )
-                            //     }
-                            // }
-                        }} key={index} className={`px-5 py-2 ${numSelected ? 'cursor-pointer' : ''} ${item.selected ? 'bg-[#ffffff2d]' : ''} w-full group relative flex flex-col ${item.sender !== account._id ? 'items-start self-start' : 'items-end self-end'}`}>
+                            if(selecteds.length) {
+                                if(!item.selected) {
+                                    setSelecteds(prev => [...prev, {chat_id: item._id, sender: item.sender}])
+                                    setArr(prev => {
+                                        const newArr = [...prev]
+                                        newArr[index] = {...newArr[index], selected: true}
+                                        return newArr
+                                    })
+                                } else {
+                                    setSelecteds(prev => prev.filter(e => e.chat_id !== item._id))
+                                    setArr(prev => {
+                                        const newArr = [...prev]
+                                        newArr[index] = {...newArr[index], selected: false}
+                                        return newArr
+                                    })
+                                }
+                            }
+                        }} key={index} className={`px-5 py-2 ${selecteds.length ? 'cursor-pointer' : ''} ${item.selected ? 'bg-[#ffffff2d]' : ''} w-full group relative flex flex-col ${item.sender !== account._id ? 'items-start self-start' : 'items-end self-end'}`}>
                             <h1 style={{
                                 wordBreak: 'break-word',
                                 whiteSpace: 'pre-wrap',
                                 overflowWrap: 'break-word',
                             }} className={`flex items-center relative font-[100] px-4 p-3 text-left text-[.8rem] max-w-[350px] bg-[#3797F0] text-white rounded-2xl ${item.sender !== account._id ? 'rounded-bl-none' : 'rounded-br-none'}`}>
                                 <button onClick={() => {
-                                    // setNumSelected(prev => prev + 1)
-                                    // setChatArea(prev => {
-                                    //     // prev.map((item, i) => 
-                                    //     //     i === index ? { ...item, selected: true } : item
-                                    //     // )
-                                    //     let temp = JSON.parse(JSON.stringify(prev))
-                                    //     temp.Chat.messages[index].selected = true
-                                    //     return temp
-                                    // })
-                                }} className={`hidden ${numSelected ? '' : 'group-hover:block'} absolute ${item.sender !== account._id ? '-right-10' : '-left-[2.3rem]'} text-[.8rem] font-normal text-[#ffffff7a] hover:text-white`}>More</button>
+                                    setSelecteds(prev => [...prev, {chat_id: item._id, sender: item.sender}])
+                                    setArr(prev => {
+                                        const newArr = [...prev]
+                                        newArr[index] = {...newArr[index], selected: true}
+                                        return newArr
+                                    })
+                                }} className={`hidden ${selecteds.length ? '' : 'group-hover:block'} absolute ${item.sender !== account._id ? '-right-10' : '-left-[2.3rem]'} text-[.8rem] font-normal text-[#ffffff7a] hover:text-white`}>More</button>
                                 {item.message}
                             </h1>
                             <h1 className='text-[0.8rem] font-semibold text-gray-500'>{
@@ -346,6 +335,29 @@ export default function ChatArea({account, chatInfo, socket}) {
                 <div className='mt-14 w-[80%] gap-1 items-start flex flex-col font-[100] text-[1.2rem] text-red-500'>
                     <button className='underline-offset-4 hover:underline'>Delete Chat</button>
                     <button className='underline-offset-4 hover:underline'>Block <b className='font-semibold'>{data.user.username}</b></button>
+                </div>
+            </div>
+            :
+            <></>
+            }
+            {deleteMessagesPopup ?
+            <div className='animate-showUp flex items-center justify-center absolute w-full h-full bg-black/50'>
+                <div className='p-4 text-white flex flex-col gap-5 items-center bg-gray-800 rounded-md'>
+                    <button onClick={() => setDeleteMessagesPopup(false)} className="absolute left-4.5 top-5.5"><CloseIcon/></button>
+                    <div className='text-[1.3rem] font-[100]'>Delete the messages?</div>
+                    <div className='flex items-center gap-4'>
+                        {(() => {
+                            for(let i of selecteds) {
+                                if(i.sender != account._id) return false
+                            }
+                            return true
+                        })() ?
+                            <button className='p-1 px-2 text-[.9rem] text-white/70 bg-white/10 rounded-sm font-[100]'>Delete for everyone</button>
+                            :
+                            <></>
+                        }
+                        <button className='p-1 px-2 text-[.9rem] text-white/70 bg-white/10 rounded-sm font-[100]'>Delete for me</button>
+                    </div>
                 </div>
             </div>
             :
