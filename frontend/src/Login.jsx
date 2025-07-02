@@ -7,10 +7,11 @@ export default function Login() {
     const [password, setPasswrod] = useState('')
     const navigate = useNavigate()
     const [show, setShow] = useState(0)
+    const [err, setErr] = useState(0)
     useEffect(() => {
         const verify = async () => {
         try {
-            const response = await axios.post('api/auth/verify', {}, {
+            await axios.post('api/auth/verify', {}, {
                 withCredentials: true
             })
             navigate('/')
@@ -65,3 +66,9 @@ return (
         <></>
     )
 }
+
+{/* <div className='left-0 absolute w-full -bottom-6 text-[.7rem] text-red-500'>{(() => {
+                                if(invErr) {
+                                    if(invErr[0] === 500) return invErr[1]
+                                }
+                            })()}</div></button> */}

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { EmojiButton } from '@joeattardi/emoji-button'
 import EmojiBtn from './assets/EmojiBtn'
 import chat_history from '../chat_history.json'
@@ -114,9 +114,18 @@ export default function ChatArea({account, chatInfo, socket}) {
             document.addEventListener("keydown", autoType)
         }
     }, [inputRef.current, buttonRef.current, pickerRef.current])
-
+    
+    useLayoutEffect(() => {
+        if(chatAreaRef.current) {
+            chatAreaRef.current.scrollTo({
+                top: chatAreaRef.current.scrollHeight,
+            })
+        }
+    }, [chatAreaRef.current])
+    
     useEffect(() => {
-        chatAreaRef.current?.scrollTo({
+        if(!chatAreaRef.current) return
+        chatAreaRef.current.scrollTo({
             top: chatAreaRef.current.scrollHeight,
             behavior: 'smooth'
         })
@@ -236,7 +245,7 @@ export default function ChatArea({account, chatInfo, socket}) {
                     <button onClick={e => {
                         if(input.length == 0) return
                         e.target.textContent = 'Sending'
-                        socket.emit('send message', {sender_id: account._id, receiver_id: chatInfo.user_id, chat_id: data.chat._id, message: input})
+                        socket.emit('send message', {sender_id: account._id, receiver_id: chatInfo.user_id, chat_id: data.chat._id, message: input.trim()})
                         e.target.textContent = 'Send'
                         setInput('')
                     }} className='text-[#3797F0] px-2 cursor-pointer active:opacity-55'>Send</button>

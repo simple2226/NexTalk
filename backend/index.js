@@ -38,27 +38,27 @@ const account_model = require('./model/account_model')
 const chat_model = require('./model/chat_model')
 
 io.on('connection', (socket) => {
-    console.log('connected')
 /*1*/
-    socket.on('register', async (my_id) => {
+    socket.on('register', async ({my_id, firstTime}) => {
         if(!my_id) {
             console.error('didnt receive id (null)')
             return
         }
         const user = await account_model.findById(my_id)
-        user.socketId = socket.id
-        await user.save()
-
         const contacts = user.contacts.map(item => [my_id, item].sort())
-
-        const docs = await chat_model.find({ between: { $in: contacts } }, { userA: 1, userB: 1 })
-        docs.forEach(doc => {
-            if(doc.userA.id === my_id) {
-                if(doc.userB.socketId) io.to(doc.userB.socketId).emit('current status', 'Online')
-            } else {
-                if(doc.userA.socketId) io.to(doc.userA.socketId).emit('current status', 'Online')
-            }
-        })
+        if (firstTime) {
+            user.socketId = socket.id
+            await user.save()
+    
+            const docs = await chat_model.find({ between: { $in: contacts } }, { userA: 1, userB: 1 })
+            docs.forEach(doc => {
+                if(doc.userA.id === my_id) {
+                    if(doc.userB.socketId) io.to(doc.userB.socketId).emit('current status', 'Online')
+                } else {
+                    if(doc.userA.socketId) io.to(doc.userA.socketId).emit('current status', 'Online')
+                }
+            })
+        }
 
         const requests = user.requests.map(item => [my_id, item].sort())
         const [Contacts, Requests] = await Promise.all([
@@ -138,10 +138,6 @@ io.on('connection', (socket) => {
             socket.emit('get chat', { user: other_user, chat })
         }
         
-        
-        const user = await account_model.findById(my_id)
-        const contacts = user?.contacts.map(item => [my_id, item].sort())
-        const requests = user?.requests.map(item => [my_id, item].sort())
         const userName = await account_model.findById(user_id).lean().username
         const retData = {
             _id: chat._id,
@@ -182,7 +178,6 @@ io.on('connection', (socket) => {
             chat.lastUpdated = Date.now()
             await chat.save()
  
-            const myContacts = from.contacts.map(item => [sender_id, item].sort())
             socket.emit('receive updated chatList', {
                 _id: chat_id,
                 userA: chat.userA,
@@ -194,7 +189,6 @@ io.on('connection', (socket) => {
             })
 
             if (to.socketId) {
-                const hisContacts = to.contacts.map(item => [receiver_id, item].sort())
                 io.to(to.socketId).emit('receive updated chatList', {
                     _id: chat_id,
                     userA: chat.userA,
@@ -220,14 +214,67 @@ io.on('connection', (socket) => {
         }
     })
 
-    socket.on('message checked', async ({chat_id, receiver_id}) => {
-        const chat = await chat_model.findById(chat_id)
-        if(chat.userA._id === receiver_id) {
-            chat.userA.checked = true
-        } else {
-            chat.userB.checked = true
+    socket.on('send invite', async ({my_id, phoneNo, firstMessage}) => {
+        const myAccount = await account_model.findById(my_id)
+        const hisAccount = await account_model.findOne({ phoneNo: phoneNo })
+        if(!hisAccount) {
+            socket.emit('invitation error', [404, 'User not found'])
+            return
         }
-        await chat.save()
+        const myAccountId = myAccount._id.toString()
+        const hisAccountId = hisAccount._id.toString()
+        if(myAccount.contacts.includes(hisAccountId)) {
+            socket.emit('invitation error', [409, 'User already added'])
+            return
+        }
+        else if(myAccount.requests.includes(hisAccountId)) {
+            myAccount.requests = myAccount.requests.filter(_id => _id !== hisAccountId)
+            myAccount.contacts.push(hisAccountId)
+            const chat = await chat_model.findOne({
+                between: [myAccountId, hisAccountId].sort()
+            })
+            if(chat.userA.id === hisAccountId) {if(!chat.userA.socketId) chat.userA.numNotRead = 1}
+            else {if(!chat.userB.socketId) chat.userB.numNotRead = 1}
+            if(firstMessage !== null) chat.messages.push({
+                doc_id: chat._id,
+                sender: myAccountId,
+                message: firstMessage
+            })
+            await myAccount.save()
+            await chat.save()
+            socket.emit('repopualate chatList', null)
+            if(hisAccount.socketId) io.to(hisAccount.socketId).emit('repopualate chatList', null)
+        }
+        else {
+            const between = [myAccountId, hisAccountId].sort()
+            const response = await chat_model.create({
+                between: between,
+                userA: {
+                    id: myAccountId
+                },
+                userB: {
+                    id: hisAccountId,
+                    numNotRead: 1
+                },
+                messages: [{
+                    doc_id: 'a',
+                    sender: myAccountId,
+                    message: firstMessage
+                }]
+            })
+            if(response) {
+                response.messages[0].doc_id = response._id.toString()
+                await response.save()
+                myAccount.contacts.push(hisAccountId)
+                hisAccount.requests.push(myAccountId)
+                await myAccount.save()
+                await hisAccount.save()
+                socket.emit('repopualate chatList', null)
+                if(hisAccount.socketId) io.to(hisAccount.socketId).emit('repopualate chatList', null)
+            } else {
+                socket.emit('invitation error', [500, 'Failed. Check your connection'])
+            }
+        }
     })
     
 /*4*/

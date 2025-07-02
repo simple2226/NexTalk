@@ -9,12 +9,26 @@
     }
 }
 
+@keyframes out-to-in {
+    0% {
+        opacity: 0;
+        transform: translateY(-20px);
+        scale: 110%;
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+        scale: 100%;
+    }
+}
+
 @theme {
     --color-borders: #ffffff38;
     --breakpoint-lg: 950px;
     --breakpoint-md: 550px;
     --breakpoint-sm: 396px;
-    --animate-showUp: showUp .2s linear 0s 1 forwards
+    --animate-showUp: showUp .2s linear 0s 1 forwards;
+    --animate-outToIn: out-to-in .2s ease-in-out 0s 1 forwards;
 }
 
 html {
