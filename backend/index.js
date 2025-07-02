@@ -98,7 +98,7 @@ io.on('connection', (socket) => {
     })
 
 /*2*/
-    socket.on('request chat', async ({prev_chat_id, chat_id, my_id, user_id}) => {
+    socket.on('request chat', async ({ prev_chat_id, chat_id, my_id, user_id, request }) => {
         if (prev_chat_id) {
             const prevChat = await chat_model.findById(prev_chat_id)
             if(prevChat.userA.id === my_id) {
@@ -135,7 +135,16 @@ io.on('connection', (socket) => {
             await chat.save()
             const other_user = await account_model.findById(user_id, {requests: 0, password: 0, refreshToken: 0})
             if(other_user.socketId) socket.emit('current status', 'Online')
-            socket.emit('get chat', { user: other_user, chat })
+            socket.emit('get chat', { user: other_user, chat, request })
+            if(chat.userA.id === my_id) {
+                if(chat.userB.socketId) {
+                    io.to(chat.userB.socketId).emit('seen?', true)
+                }
+            } else {
+                if(chat.userA.socketId) {
+                    io.to(chat.userA.socketId).emit('seen?', true)
+                }
+            }
         }
         
         const userName = await account_model.findById(user_id).lean().username
@@ -205,10 +214,12 @@ io.on('connection', (socket) => {
             if(chat.userA.id === receiver_id) {
                 if(chat.userA.socketId) {
                     io.to(chat.userA.socketId).emit('receive message', chat.messages[chat.messages.length - 1])
+                    socket.emit('seen?', true)
                 }
             } else {
                 if(chat.userB.socketId) {
                     io.to(chat.userB.socketId).emit('receive message', chat.messages[chat.messages.length - 1])
+                    socket.emit('seen?', true)
                 }
             }
         }
@@ -233,17 +244,19 @@ io.on('connection', (socket) => {
             const chat = await chat_model.findOne({
                 between: [myAccountId, hisAccountId].sort()
             })
-            if(chat.userA.id === hisAccountId) {if(!chat.userA.socketId) chat.userA.numNotRead = 1}
-            else {if(!chat.userB.socketId) chat.userB.numNotRead = 1}
-            if(firstMessage !== null) chat.messages.push({
-                doc_id: chat._id,
-                sender: myAccountId,
-                message: firstMessage
-            })
+            if(firstMessage !== null) {
+                chat.messages.push({
+                    doc_id: chat._id,
+                    sender: myAccountId,
+                    message: firstMessage
+                })
+                if(chat.userA.id === hisAccountId) {if(!chat.userA.socketId) chat.userA.numNotRead = 1}
+                else {if(!chat.userB.socketId) chat.userB.numNotRead = 1}
+            }
             await myAccount.save()
             await chat.save()
             socket.emit('repopualate chatList', null)
-            if(hisAccount.socketId) io.to(hisAccount.socketId).emit('repopualate chatList', null)
+            if(firstMessage !== null) if(hisAccount.socketId) io.to(hisAccount.socketId).emit('repopualate chatList', null)
         }
         else {
             const between = [myAccountId, hisAccountId].sort()

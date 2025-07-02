@@ -25,7 +25,7 @@ export default function ChatList({data, account, setChatInfo}) {
                     return <div onClick={() => {
                         if (isSelected) return
                         setSelectedContactId(item._id)
-                        setChatInfo({ chat_id: item._id, my_id: account._id, user_id: item.others_id })
+                        setChatInfo({ chat_id: item._id, my_id: account._id, user_id: item.others_id, request: false })
                     }} key={index} className={`select-none ${isSelected ? 'bg-white/14' : 'hover:bg-[#ffffff13]'} relative px-4 gap-3 flex items-center w-full min-h-[75px] cursor-pointer`}>
                         <Pfp size='40px' url='url(https://scontent.cdninstagram.com/v/t51.75761-19/505432788_18081790582816553_1268032086364561825_n.jpg?stp=dst-jpg_s206x206_tt6&_nc_cat=110&ccb=1-7&_nc_sid=bf7eb4&_nc_ohc=qmxJ_5-UinEQ7kNvwFCNS_A&_nc_oc=AdmIXu8mEQhIitYQtvtet_bTHTYZYT-nDXVoVc1u6sHprRDAe9Mtkdb0dvFEXxlZcOkJhMwLF8s1XxaH0SolAfNk&_nc_zt=24&_nc_ht=scontent.cdninstagram.com&_nc_gid=SKVnChxPP1rv6otItJg7jw&oh=00_AfP9fDjH-Ct--T7FE4yF2sMTuvlun4giq5Ucs0_IEqA_7Q&oe=68585D75)'/>
                         <div className='flex flex-col items-start'>
@@ -64,7 +64,7 @@ export default function ChatList({data, account, setChatInfo}) {
                     return <div onClick={() => {
                         if (isSelected) return
                         setSelectedContactId(item._id)
-                        setChatInfo({ chat_id: item._id, my_id: account._id, user_id: item.others_id })
+                        setChatInfo({ chat_id: item._id, my_id: account._id, user_id: item.others_id, request: true })
                     }} key={index} className={`select-none ${isSelected ? 'bg-white/14' : 'hover:bg-[#ffffff13]'} relative px-4 gap-3 flex items-center w-full min-h-[75px] cursor-pointer`}>
                         <Pfp size='40px' url='url(https://scontent.cdninstagram.com/v/t51.75761-19/505432788_18081790582816553_1268032086364561825_n.jpg?stp=dst-jpg_s206x206_tt6&_nc_cat=110&ccb=1-7&_nc_sid=bf7eb4&_nc_ohc=qmxJ_5-UinEQ7kNvwFCNS_A&_nc_oc=AdmIXu8mEQhIitYQtvtet_bTHTYZYT-nDXVoVc1u6sHprRDAe9Mtkdb0dvFEXxlZcOkJhMwLF8s1XxaH0SolAfNk&_nc_zt=24&_nc_ht=scontent.cdninstagram.com&_nc_gid=SKVnChxPP1rv6otItJg7jw&oh=00_AfP9fDjH-Ct--T7FE4yF2sMTuvlun4giq5Ucs0_IEqA_7Q&oe=68585D75)'/>
                         <div className='flex flex-col items-start'>

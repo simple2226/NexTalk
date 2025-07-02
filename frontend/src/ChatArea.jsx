@@ -23,6 +23,8 @@ export default function ChatArea({account, chatInfo, socket}) {
     const [numSelected, setNumSelected] = useState(0)
     const [openInfo, setOpenInfo] = useState(false)
     const [arr, setArr] = useState([])
+    const [seen, setSeen] = useState(null)
+    const [isRequested, setIsRequested] = useState(false)
     const inputRef = useRef(null)
     const buttonRef = useRef(null)
     const pickerRef = useRef(null)
@@ -31,21 +33,27 @@ export default function ChatArea({account, chatInfo, socket}) {
     useEffect(() => {
         if(!socket) return
         const socketInstance = socket
-        const getChat = (data) => { setData(data) }
-        const inTheChaTfunc = (inTheChat) => { setInTheChat(inTheChat) }
+        const getChat = (data) => {
+            setData(data)
+            setIsRequested(data.request)
+        }
+        const inTheChatfunc = (inTheChat) => { setInTheChat(inTheChat) }
+        const seen = (seen) => { setSeen(seen) }
         const currentStatus = (status) => { setStatus(status) }
         const receiveMessage = (message) => {
             if(dataRef.current && message.doc_id === dataRef.current.chat._id)
                 setArr(prev => [...prev, message])
         }
         socketInstance.on('get chat', getChat)
-        socketInstance.on('in the chat?', inTheChaTfunc)
+        socketInstance.on('in the chat?', inTheChatfunc)
+        socketInstance.on('seen?', seen)
         socketInstance.on('current status', currentStatus)
         socketInstance.on('receive message', receiveMessage)
-
+        
         return () => {
             socketInstance.off('get chat', getChat)
-            socketInstance.off('in the chat?', inTheChaTfunc)
+            socketInstance.off('in the chat?', inTheChatfunc)
+            socketInstance.off('seen?', seen)
             socketInstance.off('current status', currentStatus)
             socketInstance.off('receive message', receiveMessage)
         }
@@ -55,7 +63,18 @@ export default function ChatArea({account, chatInfo, socket}) {
         if(!data) return
         dataRef.current = data
         setArr(data.chat.messages)
+        const user = data.chat.userA.id === account._id ? 'userB' : 'userA'
+        setSeen(data.chat[user].checked)
     }, [data])
+
+    useEffect(() => {
+        if(seen === true && chatAreaRef.current) {
+            chatAreaRef.current.scrollTo({
+                top: chatAreaRef.current.scrollHeight,
+                behavior: 'smooth'
+            })
+        }
+    }, [seen])
 
     useEffect(() => {
         setOpenInfo(false)
@@ -65,6 +84,8 @@ export default function ChatArea({account, chatInfo, socket}) {
         setData(null)
         setInTheChat(false)
         setStatus('Offline')
+        setIsRequested(false)
+        setSeen(null)
 
         if(socket && chatInfo.chat_id && chatInfo.my_id && chatInfo.user_id)
             socket.emit('request chat', { prev_chat_id: data ? data.chat._id : null, ...chatInfo })
@@ -140,13 +161,23 @@ export default function ChatArea({account, chatInfo, socket}) {
                         <Pfp size='45px' url='url(https://scontent.cdninstagram.com/v/t51.75761-19/505432788_18081790582816553_1268032086364561825_n.jpg?stp=dst-jpg_s206x206_tt6&_nc_cat=110&ccb=1-7&_nc_sid=bf7eb4&_nc_ohc=qmxJ_5-UinEQ7kNvwFCNS_A&_nc_oc=AdmIXu8mEQhIitYQtvtet_bTHTYZYT-nDXVoVc1u6sHprRDAe9Mtkdb0dvFEXxlZcOkJhMwLF8s1XxaH0SolAfNk&_nc_zt=24&_nc_ht=scontent.cdninstagram.com&_nc_gid=SKVnChxPP1rv6otItJg7jw&oh=00_AfP9fDjH-Ct--T7FE4yF2sMTuvlun4giq5Ucs0_IEqA_7Q&oe=68585D75)'/>
                         <div className='flex-col items-start'>
                             <div className='text-white text-[1.2rem] font-semibold'>{data.user.username}</div>
-                            <div className={`text-start transition ease-linear duration-200 ${inTheChat ? 'opacity-100' : 'size-0 opacity-0'} text-[.7rem] text-[#ffffffb6] text-nowrap`}>Currently in the chat</div>
+                            {!isRequested ?
+                                <div className={`text-start transition ease-linear duration-200 ${inTheChat ? 'opacity-100' : 'size-0 opacity-0'} text-[.7rem] text-[#ffffffb6] text-nowrap`}>Currently in the chat</div>
+                                :
+                                <></>
+                            }
                         </div>
                     </div>
                     <div className='flex gap-4 items center justify-self-end'>
+                        {!isRequested ?
+                        <>
                         <button className='active:opacity-55 cursor-pointer'><VoiceChatIcon size='24'/></button>
                         <button className='active:opacity-55 cursor-pointer'><VideoChatIcon/></button>
                         <button onClick={() => setOpenInfo(true)} className='active:opacity-55 cursor-pointer'><UserInfoIcon/></button>
+                        </>
+                            :
+                        <></>
+                        }
                     </div></>)
                     :
                     (<><div>
@@ -225,13 +256,18 @@ export default function ChatArea({account, chatInfo, socket}) {
                                     hour12: true
                                 }).toString()
                             }</h1>
+                            {seen && index === arr.length - 1 && item.sender === account._id ?
+                                <div className='text-white/50 text-[0.9rem]'>Seen</div> :
+                                <></>
+                            }
                         </div>
                     )
                 )}
             </div>
 
 
-            <div className='flex items-center relative p-3 w-full min-h-[70px]'>
+            <div className='flex items-center relative p-3 w-full min-h-[70px]'> {
+                !isRequested ?
                 <div className='flex px-3 gap-3 items-center text-[.9rem] border-[1px] border-borders rounded-full h-full w-full'>
                     <button ref={buttonRef} className='cursor-pointer active:opacity-55'><EmojiBtn/></button>
                     <input
@@ -244,16 +280,26 @@ export default function ChatArea({account, chatInfo, socket}) {
                     />
                     <button onClick={e => {
                         if(input.length == 0) return
-                        e.target.textContent = 'Sending'
                         socket.emit('send message', {sender_id: account._id, receiver_id: chatInfo.user_id, chat_id: data.chat._id, message: input.trim()})
-                        e.target.textContent = 'Send'
                         setInput('')
+                        setSeen(false)
                     }} className='text-[#3797F0] px-2 cursor-pointer active:opacity-55'>Send</button>
                 </div>
-            </div>
+                :
+                <div className='py-5 w-full flex justify-center text-white'>
+                    <div className='flex flex-col font-[100] text-[1.2rem]'>
+                        <div>Accept invite from <b className='font-bold'>{data.user.username}</b>?</div>
+                        <button onClick={() => {
+                            socket.emit('send invite', { my_id: account._id, phoneNo: data.user.phoneNo, firstMessage: null })
+                            setIsRequested(false)
+                        }} className='hover:underline underline-offset-4 text-[#3797F0]'>Accept.</button>
+                    </div>
+                </div>
+            }</div>
 
 
-            <div className={`pt-10 flex flex-col gap-2 items-center transition ease-in-out duration-500 ${openInfo ? 'translate-x-0' : 'translate-x-[382px]'} absolute right-0 h-full w-[382px] border-l border-borders bg-black text-white`}>
+            {!isRequested ?
+                <div className={`pt-10 flex flex-col gap-2 items-center transition ease-in-out duration-500 ${openInfo ? 'translate-x-0' : 'translate-x-[382px]'} absolute right-0 h-full w-[382px] border-l border-borders bg-black text-white`}>
                 <button onClick={() => setOpenInfo(false)} className='absolute left-[10px] top-[10px]'><CloseIcon/></button>
                 <div>
                     <Pfp size='250px' url='url(https://scontent.cdninstagram.com/v/t51.75761-19/505432788_18081790582816553_1268032086364561825_n.jpg?stp=dst-jpg_s206x206_tt6&_nc_cat=110&ccb=1-7&_nc_sid=bf7eb4&_nc_ohc=qmxJ_5-UinEQ7kNvwFCNS_A&_nc_oc=AdmIXu8mEQhIitYQtvtet_bTHTYZYT-nDXVoVc1u6sHprRDAe9Mtkdb0dvFEXxlZcOkJhMwLF8s1XxaH0SolAfNk&_nc_zt=24&_nc_ht=scontent.cdninstagram.com&_nc_gid=SKVnChxPP1rv6otItJg7jw&oh=00_AfP9fDjH-Ct--T7FE4yF2sMTuvlun4giq5Ucs0_IEqA_7Q&oe=68585D75)'/>
@@ -295,6 +341,9 @@ export default function ChatArea({account, chatInfo, socket}) {
                     <button className='underline-offset-4 hover:underline'>Block <b className='font-semibold'>{data.user.username}</b></button>
                 </div>
             </div>
+            :
+            <></>
+            }
         </div>
         :
         <div className={`text-[1.5rem] animate-pulse font-[100] text-white flex flex-col gap-2 items-center justify-center h-[100vh] w-full`}>
