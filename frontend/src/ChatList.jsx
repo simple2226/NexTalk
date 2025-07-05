@@ -3,13 +3,14 @@ import SearchIcon from './assets/SearchIcon'
 import Pfp from './assets/Pfp'
 import { io } from 'socket.io-client'
 import CloseIcon from './assets/CloseIcon'
+import NotAllowed from './assets/NotAllowed'
 
 export default function ChatList({data, account, setChatInfo}) {
     const [openRequests, setOpenRequests] = useState(false)
     const [selectedContactId, setSelectedContactId] = useState(null);
     return (
         !openRequests ?
-        <div className='pt-5 flex flex-col items-start h-[100vh] min-w-[397px] border-r border-borders'>
+        <div className='pt-5 flex flex-col items-start h-[100vh] min-w-[397px] max-w-[397px] border-r border-borders'>
             <div className='w-full flex items-end justify-between px-5 text-white font-semibold text-[1.5rem]'>
                 <div>Messages</div>
                 <button onClick={() => setOpenRequests(true)} className='cursor-pointer active:opacity-55 text-[1rem] text-[#ffffff6c]'>Requests ({data.Requests.length})</button>
@@ -31,7 +32,18 @@ export default function ChatList({data, account, setChatInfo}) {
                         <div className='flex flex-col items-start'>
                             <div className='text-white text-[1rem] font-semibold'>{item.name}</div>
                             <div className={`${(item.userA.id === account._id ? item.userA.checked : item.userB.checked) ?
-                            'text-[#ffffff6c]' : 'text-white font-semibold'}  text-[.9rem]`}>{item.lastMessage ? item.lastMessage.message : "Start the conversation!"}</div>
+                            'text-[#ffffff6c]' : 'text-white font-semibold'}  text-[.9rem] text-nowrap`}>
+                                {item.lastMessage ? 
+                                    (item.lastMessage.deletedForBoth ? 
+                                        <div className='flex gap-2 items-center text-[#ffffff6c]'>
+                                            <NotAllowed size='10px' color='#ffffff6c'/> this message is deleted
+                                        </div> 
+                                        :
+                                        item.lastMessage.message
+                                    )
+                                    :
+                                    "Start the conversation!"
+                                }</div>
                         </div>
                         {(() => {
                             if(item.userA.id === account._id) return item.userA.numNotRead

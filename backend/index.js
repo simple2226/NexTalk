@@ -61,14 +61,82 @@ io.on('connection', (socket) => {
         }
 
         const requests = user.requests.map(item => [my_id, item].sort())
+        // const [Contacts, Requests] = await Promise.all([
+        //     chat_model.aggregate([
+        //         { $match: { between: { $in: contacts } } },
+        //         { $project: { _id: 1, between: 1, userA: 1, userB: 1, lastUpdated: 1, lastMessage: { $ifNull: [ { $arrayElemAt: ['$messages', -1] }, null ] } } }
+        //     ]),
+        //     chat_model.aggregate([
+        //         { $match: { between: { $in: requests } } },
+        //         { $project: { _id: 1, between: 1, userA: 1, userB: 1, lastUpdated: 1, lastMessage: { $ifNull: [ { $arrayElemAt: ['$messages', -1] }, null ] } } }
+        //     ])
+        // ])
         const [Contacts, Requests] = await Promise.all([
             chat_model.aggregate([
                 { $match: { between: { $in: contacts } } },
-                { $project: { _id: 1, between: 1, userA: 1, userB: 1, lastUpdated: 1, lastMessage: { $ifNull: [ { $arrayElemAt: ['$messages', -1] }, null ] } } }
+                {
+                    $project: {
+                        _id: 1,
+                        between: 1,
+                        userA: 1,
+                        userB: 1,
+                        lastUpdated: 1,
+                        lastMessage: {
+                            $let: {
+                                vars: {
+                                    reversed: { $reverseArray: "$messages" },
+                                    myId: my_id
+                                },
+                                in: {
+                                    $first: {
+                                        $filter: {
+                                            input: "$$reversed",
+                                            as: "msg",
+                                            cond: {
+                                                $not: {
+                                                    $in: ["$$myId", "$$msg.deletedForOne"]
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             ]),
             chat_model.aggregate([
                 { $match: { between: { $in: requests } } },
-                { $project: { _id: 1, between: 1, userA: 1, userB: 1, lastUpdated: 1, lastMessage: { $ifNull: [ { $arrayElemAt: ['$messages', -1] }, null ] } } }
+                {
+                    $project: {
+                        _id: 1,
+                        between: 1,
+                        userA: 1,
+                        userB: 1,
+                        lastUpdated: 1,
+                        lastMessage: {
+                            $let: {
+                                vars: {
+                                    reversed: { $reverseArray: "$messages" },
+                                    myId: my_id
+                                },
+                                in: {
+                                    $first: {
+                                        $filter: {
+                                            input: "$$reversed",
+                                            as: "msg",
+                                            cond: {
+                                                $not: {
+                                                    $in: ["$$myId", "$$msg.deletedForOne"]
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             ])
         ])
 
@@ -134,21 +202,23 @@ io.on('connection', (socket) => {
             socket.emit('get chat', { user: other_user, chat, request })
 
             UTU = chat.userA.id === my_id ? 'userB' : 'userA'
-            if(chat[UTU].socketId) io.to(chat[UTU].socketId).emit('seen?', [...seenTheMessages])
-        }
-        
-        const userName = await account_model.findById(user_id).lean().username
-        const retData = {
-            _id: chat._id,
-            userA: chat.userA,
-            userB: chat.userB,
-            lastMessage: chat.messages.length ? chat.messages[chat.messages.length - 1] : null,
-            name: userName,
-            lastUpdated: chat.lastUpdated,
-            others_id: user_id
+            if(chat[UTU].socketId) { io.to(chat[UTU].socketId).emit('seen?', [...seenTheMessages]) }
+            
+            socket.emit('receive updated chatList', {
+                _id: chat._id,
+                userA: chat.userA,
+                userB: chat.userB
+            })
+
+            // _id: chat._id,
+            // userA: chat.userA,
+            // userB: chat.userB,
+            // lastMessage: chat.messages.length ? chat.messages[chat.messages.length - 1] : null,
+            // name: userName,
+            // lastUpdated: chat.lastUpdated,
+            // others_id: user_id
         }
 
-        socket.emit('receive updated chatList', retData)
     })
 
 /*3*/
@@ -176,15 +246,28 @@ io.on('connection', (socket) => {
             chat.lastUpdated = Date.now()
 
             await chat.save()
+
+            let senderLastMessage = null
+            let receiverLastMessage = null
+            for(let ind = chat.messages.length - 1; ind >= 0; --ind) {
+                if(!chat.messages[ind].deletedForOne.includes(sender_id)) {
+                    senderLastMessage = chat.messages[ind]
+                    break
+                }
+            }
+            for(let ind = chat.messages.length - 1; ind >= 0; --ind) {
+                if(!chat.messages[ind].deletedForOne.includes(receiver_id)) {
+                    receiverLastMessage = chat.messages[ind]
+                    break
+                }
+            }
  
             socket.emit('receive updated chatList', {
                 _id: chat_id,
                 userA: chat.userA,
                 userB: chat.userB,
-                lastMessage: chat.messages.length ? chat.messages[chat.messages.length - 1] : null,
-                name: to.username,
-                lastUpdated: chat.lastUpdated,
-                others_id: receiver_id
+                lastMessage: senderLastMessage,
+                lastUpdated: chat.lastUpdated
             })
 
             if(to.socketId) {
@@ -192,10 +275,8 @@ io.on('connection', (socket) => {
                     _id: chat_id,
                     userA: chat.userA,
                     userB: chat.userB,
-                    lastMessage: chat.messages.length ? chat.messages[chat.messages.length - 1] : null,
-                    name: from.username,
-                    lastUpdated: chat.lastUpdated,
-                    others_id: sender_id
+                    lastMessage: receiverLastMessage,
+                    lastUpdated: chat.lastUpdated
                 })
             }
             
@@ -271,7 +352,94 @@ io.on('connection', (socket) => {
             }
         }
     })
+
+
+    socket.on('delete for me', async ({ chat_id, my_id, selecteds }) => {
+        const Chat = await chat_model.findById(chat_id)
+        if(Chat) {
+            const set = new Set(selecteds.map(item => item.message_id))
+            const newMessages = []
+            Chat.messages.forEach(item => {
+                if(set.has(item._id.toString())) {
+                    if (!item.deletedForOne.includes(my_id)) {
+                        item.deletedForOne.push(my_id)
+                    }
+                    if(item.deletedForOne.length < 2) {
+                        newMessages.push(item)
+                    }
+                } else {
+                    newMessages.push(item)
+                }
+            })
+            Chat.messages = newMessages
+            await Chat.save()
+
+            let lastMessage = null
+            for(let ind = Chat.messages.length - 1; ind >= 0; --ind) {
+                if(!Chat.messages[ind].deletedForOne.includes(my_id)) {
+                    lastMessage = Chat.messages[ind]
+                    break
+                }
+            }
+
+            socket.emit('receive updated chatList', {
+                _id: chat_id,
+                userA: Chat.userA,
+                userB: Chat.userB,
+                lastMessage
+            })
+        }
+    })
     
+    socket.on('delete for everyone', async ({ chat_id, my_id, his_id, selecteds }) => {
+        const Chat = await chat_model.findById(chat_id)
+        if(Chat) {
+            const set = new Set(selecteds.map(item => item.message_id))
+            Chat.messages.forEach(item => {
+                if(set.has(item._id.toString()))
+                    item.deletedForBoth = true
+            })
+            await Chat.save()
+            
+            let UTU = Chat.userA.id === his_id ? 'userA' : 'userB'
+            if(Chat[UTU].socketId) {
+                io.to(Chat[UTU].socketId).emit('deleted for everyone', [...set])
+            }
+
+            let lastMessage = null
+            for(let ind = Chat.messages.length - 1; ind >= 0; --ind) {
+                if(!Chat.messages[ind].deletedForOne.includes(his_id)) {
+                    lastMessage = Chat.messages[ind]
+                    break
+                }
+            }
+            
+            const him = await account_model.findById(his_id)
+            if(him?.socketId) {
+                io.to(him.socketId).emit('receive updated chatList', {
+                    _id: chat_id,
+                    userA: Chat.userA,
+                    userB: Chat.userB,
+                    lastMessage
+                })
+            }
+
+            lastMessage = null
+            for(let ind = Chat.messages.length - 1; ind >= 0; --ind) {
+                if(!Chat.messages[ind].deletedForOne.includes(my_id)) {
+                    lastMessage = Chat.messages[ind]
+                    break
+                }
+            }
+            socket.emit('receive updated chatList', {
+                _id: chat_id,
+                userA: Chat.userA,
+                userB: Chat.userB,
+                lastMessage
+            })
+        }
+    })
+
 /*4*/
     socket.on('disconnect', async () => {
         const user = await account_model.findOne({ socketId: socket.id })

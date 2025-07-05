@@ -95,8 +95,7 @@ export default function MainLayout() {
 
     const isValidIndianPhoneNumber = (input) => {
         const digitsOnly = input.replace(/\s+/g, '')
-    
-        const regex = /^(?:\+91|91)?[6-9]\d{9}$/
+        const regex = /^[6-9]\d{9}$/
         return regex.test(digitsOnly);
     }
 

@@ -1,7 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { EmojiButton } from '@joeattardi/emoji-button'
 import EmojiBtn from './assets/EmojiBtn'
-import chat_history from '../chat_history.json'
 import VoiceChatIcon from './assets/VoiceChatIcon'
 import VideoChatIcon from './assets/VideoChatIcon'
 import UserInfoIcon from './assets/UserInfoIcon'
@@ -13,6 +12,7 @@ import CopyIcon from './assets/CopyIcon'
 import ReplyIcon from './assets/ReplyIcon'
 import DeleteIcon from './assets/DeleteIcon'
 import ChatIcon from './assets/ChatIcon'
+import NotAllowed from './assets/NotAllowed'
 
 export default function ChatArea({account, chatInfo, socket}) {
     const [data, setData] = useState(null)
@@ -51,6 +51,19 @@ export default function ChatArea({account, chatInfo, socket}) {
                 return newArr
             })
         }
+        const dfe = (deletedSet) => {
+            const s = new Set(deletedSet)
+            setArr(prev => {
+                const newArr = [...prev]
+                for(let i = newArr.length - 1; i >= 0 && s.size > 0; i--) {
+                    if(s.has(newArr[i]._id)) {
+                        newArr[i] = { ...newArr[i], deletedForBoth: true }
+                        s.delete(newArr[i]._id)
+                    }
+                }
+                return newArr
+            })
+        }
         const currentStatus = (status) => { setStatus(status) }
         const receiveMessage = (message) => {
             if(dataRef.current && message.doc_id === dataRef.current.chat._id)
@@ -59,6 +72,7 @@ export default function ChatArea({account, chatInfo, socket}) {
         socketInstance.on('get chat', getChat)
         socketInstance.on('in the chat?', inTheChatfunc)
         socketInstance.on('seen?', seen)
+        socketInstance.on('deleted for everyone', dfe)
         socketInstance.on('current status', currentStatus)
         socketInstance.on('receive message', receiveMessage)
         
@@ -66,6 +80,7 @@ export default function ChatArea({account, chatInfo, socket}) {
             socketInstance.off('get chat', getChat)
             socketInstance.off('in the chat?', inTheChatfunc)
             socketInstance.off('seen?', seen)
+            socketInstance.off('deleted for everyone', dfe)
             socketInstance.off('current status', currentStatus)
             socketInstance.off('receive message', receiveMessage)
         }
@@ -74,7 +89,7 @@ export default function ChatArea({account, chatInfo, socket}) {
     useEffect(() => {
         if(!data) return
         dataRef.current = data
-        setArr(data.chat.messages.map(item => { return { ...item, selected: false } }))
+        setArr(data.chat.messages.filter(item => !item.deletedForOne.includes(account._id)).map(item => { return { ...item, selected: false } }))
     }, [data])
 
 
@@ -154,10 +169,6 @@ export default function ChatArea({account, chatInfo, socket}) {
         })
     }, [arr.length, chatAreaRef.current])
 
-    useEffect(() => {
-        console.log(selecteds)
-    }, [selecteds])
-
     return ((chatInfo.chat_id && chatInfo.my_id && chatInfo.user_id) ? (
         data ?
         <div className={`animate-showUp relative flex flex-col h-[100vh] w-[calc(100vw-397px)] min-w-[277px]`}>
@@ -207,14 +218,14 @@ export default function ChatArea({account, chatInfo, socket}) {
                         <div onClick={() => {
                             if(selecteds.length) {
                                 if(!item.selected) {
-                                    setSelecteds(prev => [...prev, {chat_id: item._id, sender: item.sender}])
+                                    setSelecteds(prev => [...prev, {message_id: item._id, sender: item.sender, deletedForBoth: item.deletedForBoth}])
                                     setArr(prev => {
                                         const newArr = [...prev]
                                         newArr[index] = {...newArr[index], selected: true}
                                         return newArr
                                     })
                                 } else {
-                                    setSelecteds(prev => prev.filter(e => e.chat_id !== item._id))
+                                    setSelecteds(prev => prev.filter(e => e.message_id !== item._id))
                                     setArr(prev => {
                                         const newArr = [...prev]
                                         newArr[index] = {...newArr[index], selected: false}
@@ -229,14 +240,20 @@ export default function ChatArea({account, chatInfo, socket}) {
                                 overflowWrap: 'break-word',
                             }} className={`flex items-center relative font-[100] px-4 p-3 text-left text-[.8rem] max-w-[350px] bg-[#3797F0] text-white rounded-2xl ${item.sender !== account._id ? 'rounded-bl-none' : 'rounded-br-none'}`}>
                                 <button onClick={() => {
-                                    setSelecteds(prev => [...prev, {chat_id: item._id, sender: item.sender}])
+                                    setSelecteds(prev => [...prev, {message_id: item._id, sender: item.sender, deletedForBoth: item.deletedForBoth}])
                                     setArr(prev => {
                                         const newArr = [...prev]
                                         newArr[index] = {...newArr[index], selected: true}
                                         return newArr
                                     })
                                 }} className={`hidden ${selecteds.length ? '' : 'group-hover:block'} absolute ${item.sender !== account._id ? '-right-10' : '-left-[2.3rem]'} text-[.8rem] font-normal text-[#ffffff7a] hover:text-white`}>More</button>
-                                {item.message}
+                                <div className={`${item.deletedForBoth ? 'italic' : ''}`}>
+                                    {item.deletedForBoth ?
+                                        <div className='flex items-center'><NotAllowed size='10px' color='#ffffff'/> this message is deleted</div>
+                                        :
+                                        item.message
+                                    }
+                                </div>
                             </h1>
                             <h1 className='text-[0.8rem] font-semibold text-gray-500'>{
                                 (new Date(item.sentWhen)).toLocaleTimeString('en-US', {
@@ -247,7 +264,7 @@ export default function ChatArea({account, chatInfo, socket}) {
                             }</h1>
                             {(() => {
                                 if(index === arr.length - 1 && item.sender === account._id && item.seen === true) {
-                                    return <div className='text-white/50 text-[0.9rem]'>Seen</div>
+                                    return <div className='text-white/50 text-[0.8rem]'>Seen</div>
                                     const dtb = chatAreaRef.current.scrollHeight - chatAreaRef.current.scrollTop - chatAreaRef.current.clientHeight
                                     if(dtb <= 25) {
                                         chatAreaRef.current.scrollTo({
@@ -263,7 +280,7 @@ export default function ChatArea({account, chatInfo, socket}) {
             </div>
 
 
-            <div className='flex items-center relative p-3 w-full min-h-[70px]'> {
+            <div className={`${!selecteds.length ? '' : 'opacity-40 pointer-events-none'} flex items-center relative p-3 w-full min-h-[70px]`}> {
                 !isRequested ?
                 <div className='flex px-3 gap-3 items-center text-[.9rem] border-[1px] border-borders rounded-full h-full w-full'>
                     <button ref={buttonRef} className='cursor-pointer active:opacity-55'><EmojiBtn/></button>
@@ -348,15 +365,32 @@ export default function ChatArea({account, chatInfo, socket}) {
                     <div className='flex items-center gap-4'>
                         {(() => {
                             for(let i of selecteds) {
-                                if(i.sender != account._id) return false
+                                if(i.sender != account._id || i.deletedForBoth) return false
                             }
                             return true
                         })() ?
-                            <button className='p-1 px-2 text-[.9rem] text-white/70 bg-white/10 rounded-sm font-[100]'>Delete for everyone</button>
+                            <button onClick={() => {
+                                setArr(prev => 
+                                    prev.map((e) => 
+                                        selecteds.some(f => f.message_id === e._id) ? 
+                                        {...e, deletedForBoth: true, selected: false} : 
+                                        {...e, selected: false}
+                                    )
+                                )
+                                setDeleteMessagesPopup(false)
+                                socket.emit('delete for everyone', { chat_id: data.chat._id, my_id: account._id,
+                                his_id: data.user._id, selecteds})
+                                setSelecteds([])
+                            }} className='p-1 px-2 text-[.9rem] text-white/70 bg-white/10 rounded-sm font-[100]'>Delete for everyone</button>
                             :
                             <></>
                         }
-                        <button className='p-1 px-2 text-[.9rem] text-white/70 bg-white/10 rounded-sm font-[100]'>Delete for me</button>
+                        <button onClick={() => {
+                            setArr(prev => prev.filter(e => !selecteds.some(f => f.message_id === e._id)))
+                            setDeleteMessagesPopup(false)
+                            socket.emit('delete for me', { chat_id: data.chat._id, my_id: account._id, selecteds })
+                            setSelecteds([])
+                        }} className='p-1 px-2 text-[.9rem] text-white/70 bg-white/10 rounded-sm font-[100]'>Delete for me</button>
                     </div>
                 </div>
             </div>
