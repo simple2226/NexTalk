@@ -14,6 +14,8 @@ import DeleteIcon from './assets/DeleteIcon'
 import ChatIcon from './assets/ChatIcon'
 import NotAllowed from './assets/NotAllowed'
 
+import { motion } from "framer-motion";
+
 export default function ChatArea({account, chatInfo, socket}) {
     const [data, setData] = useState(null)
     const dataRef = useRef(null)
@@ -29,6 +31,17 @@ export default function ChatArea({account, chatInfo, socket}) {
     const buttonRef = useRef(null)
     const pickerRef = useRef(null)
     const chatAreaRef = useRef(null)
+
+    const peerConnectionRef = useRef(null);
+    const localVideoRef = useRef(null);
+    const remoteVideoRef = useRef(null);
+    const pendingCandidatesRef = useRef([]);
+
+    const iceConfig = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' }
+        ]
+    };
     
     useEffect(() => {
         if(!socket) return
@@ -76,16 +89,161 @@ export default function ChatArea({account, chatInfo, socket}) {
         socketInstance.on('current status', currentStatus)
         socketInstance.on('receive message', receiveMessage)
         
+        socketInstance.on("webrtc-offer", async ({ fromSocketId, offer }) => {
+            const peerConnection = new RTCPeerConnection(iceConfig);
+            peerConnectionRef.current = peerConnection;
+
+            peerConnection.oniceconnectionstatechange = () => {
+                console.log("ICE State:", peerConnection.iceConnectionState);
+            };
+            peerConnection.onconnectionstatechange = () => {
+                console.log("Connection State:", peerConnection.connectionState);
+            };
+            
+            // 3. Send ICE candidates to caller
+            peerConnection.onicecandidate = (event) => {
+                if (event.candidate) {
+                    socket.emit("webrtc-ice-candidate", {
+                        toSocketId: fromSocketId,
+                        candidate: event.candidate,
+                    });
+                }
+            };
+
+            // 4. Display remote stream
+            peerConnection.ontrack = (event) => {
+                const [remoteStream] = event.streams;
+                console.log("Received remote stream", remoteStream);
+                if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
+            };
+            
+            const localStream = await navigator.mediaDevices.getUserMedia({
+                video: true,
+                audio: true,
+            });
+
+            if (localVideoRef.current)
+                localVideoRef.current.srcObject = localStream;
+
+            localStream.getTracks().forEach((track) => {
+                peerConnection.addTrack(track, localStream);
+            });
+
+            await peerConnection.setRemoteDescription(
+                new RTCSessionDescription(offer)
+            );
+
+            for (const candidate of pendingCandidatesRef.current) {
+                try {
+                    await peerConnection.addIceCandidate(
+                        new RTCIceCandidate(candidate)
+                    );
+                } catch (err) {
+                    console.error("Error adding queued ICE candidate", err);
+                }
+            }
+            pendingCandidatesRef.current = [];
+
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+
+            // 2. Send answer to caller
+            socket.emit("webrtc-answer", {
+                toSocketId: fromSocketId,
+                answer,
+            });
+
+        });
+
+        // 5. Receive ICE candidate from caller
+        socketInstance.on("webrtc-ice-candidate", async ({ candidate }) => {
+            const pc = peerConnectionRef.current;
+
+            if (!pc || !candidate) return;
+
+            if (!pc.remoteDescription || pc.remoteDescription.type === "") {
+                // Remote description not set yet – queue the candidate
+                pendingCandidatesRef.current.push(candidate);
+            } else {
+                try {
+                    await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                    console.log('yo')
+                } catch (err) {
+                    console.error("Error adding received ice candidate", err);
+                }
+            }
+        });
+
+        socketInstance.on("webrtc-answer", async ({ answer }) => {
+            if (peerConnectionRef.current) {
+                await peerConnectionRef.current.setRemoteDescription(
+                    new RTCSessionDescription(answer)
+                );
+            }
+        });
+
         return () => {
-            socketInstance.off('get chat', getChat)
-            socketInstance.off('in the chat?', inTheChatfunc)
-            socketInstance.off('seen?', seen)
-            socketInstance.off('deleted for everyone', dfe)
-            socketInstance.off('current status', currentStatus)
-            socketInstance.off('receive message', receiveMessage)
+            socketInstance.off('get chat')
+            socketInstance.off('in the chat?')
+            socketInstance.off('seen?')
+            socketInstance.off('deleted for everyone')
+            socketInstance.off('current status')
+            socketInstance.off('receive message')
+
+            socketInstance.off('webrtc-offer')
+            socketInstance.off('webrtc-ice-candidate');
+            socketInstance.off('webrtc-answer');
         }
     }, [socket])
 
+    const startCall = async () => {
+        const peerConnection = new RTCPeerConnection(iceConfig);
+        peerConnectionRef.current = peerConnection;
+
+        peerConnection.oniceconnectionstatechange = () => {
+            console.log("ICE State:", peerConnection.iceConnectionState);
+        };
+        peerConnection.onconnectionstatechange = () => {
+            console.log("Connection State:", peerConnection.connectionState);
+        };
+        
+        // Send local ICE candidates
+        peerConnection.onicecandidate = event => {
+          if (event.candidate) {
+            socket.emit('webrtc-ice-candidate', {
+              toSocketId: data.user.socketId,
+              candidate: event.candidate
+            });
+          }
+        };
+    
+        // Receive remote stream
+        peerConnection.ontrack = event => {
+          const [remoteStream] = event.streams;
+          console.log("Received remote stream", remoteStream);
+          if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
+        };
+
+        // Get local stream
+        const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        if (localVideoRef.current) localVideoRef.current.srcObject = localStream;
+        
+        // Add tracks to connection
+        localStream.getTracks().forEach(track => {
+            peerConnection.addTrack(track, localStream);
+        });
+    
+        // Create offer and send to callee
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+    
+        socket.emit('webrtc-offer', {
+          toSocketId: data.user.socketId,
+          offer
+        });
+    
+    };
+    
     useEffect(() => {
         if(!data) return
         dataRef.current = data
@@ -189,7 +347,7 @@ export default function ChatArea({account, chatInfo, socket}) {
                         {!isRequested ?
                         <>
                         <button className='active:opacity-55 cursor-pointer'><VoiceChatIcon size='24'/></button>
-                        <button className='active:opacity-55 cursor-pointer'><VideoChatIcon/></button>
+                        <button onClick={() => startCall(data.user.socketId)} className='active:opacity-55 cursor-pointer'><VideoChatIcon/></button>
                         <button onClick={() => setOpenInfo(true)} className='active:opacity-55 cursor-pointer'><UserInfoIcon/></button>
                         </>
                             :
@@ -213,7 +371,22 @@ export default function ChatArea({account, chatInfo, socket}) {
                 }
             </div>
 
-            <div ref={chatAreaRef} className='pt-3 flex flex-col gap-2 overflow-y-auto w-full h-full'>
+            <div ref={chatAreaRef} className='relative overflow-x-hidden pt-3 flex flex-col gap-2 overflow-y-auto w-full h-full'>
+                <motion.div
+                    drag
+                    dragConstraints={chatAreaRef}
+                    style={{
+                        zIndex: 99999999,
+                        width: 300,
+                        height: 150,
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                    }}
+                >
+                    <video className='border border-white' ref={remoteVideoRef} autoPlay playsInline />
+                    <video className='border border-white' ref={localVideoRef} autoPlay playsInline />
+                </motion.div>
                 {arr.map((item, index) => (
                         <div onClick={() => {
                             if(selecteds.length) {

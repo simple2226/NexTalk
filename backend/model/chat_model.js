@@ -31,7 +31,13 @@ const Chat_Schema = mongoose.Schema({
         edited: {type: Boolean, default: false},
         deletedForBoth: {type: Boolean, default: false},
         deletedForOne: [String],
-        replyFor: {type: String, default: null}
+        replyFor: {type: String, default: null},
+        isCall: {
+            isIt: {type: Boolean, default: false},
+            caller: {type: String, default: null},
+            callee: {type: String, default: null},
+            status: {type: String, default: null}
+        }
     }]
 })
 

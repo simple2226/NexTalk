@@ -61,16 +61,6 @@ io.on('connection', (socket) => {
         }
 
         const requests = user.requests.map(item => [my_id, item].sort())
-        // const [Contacts, Requests] = await Promise.all([
-        //     chat_model.aggregate([
-        //         { $match: { between: { $in: contacts } } },
-        //         { $project: { _id: 1, between: 1, userA: 1, userB: 1, lastUpdated: 1, lastMessage: { $ifNull: [ { $arrayElemAt: ['$messages', -1] }, null ] } } }
-        //     ]),
-        //     chat_model.aggregate([
-        //         { $match: { between: { $in: requests } } },
-        //         { $project: { _id: 1, between: 1, userA: 1, userB: 1, lastUpdated: 1, lastMessage: { $ifNull: [ { $arrayElemAt: ['$messages', -1] }, null ] } } }
-        //     ])
-        // ])
         const [Contacts, Requests] = await Promise.all([
             chat_model.aggregate([
                 { $match: { between: { $in: contacts } } },
@@ -209,14 +199,6 @@ io.on('connection', (socket) => {
                 userA: chat.userA,
                 userB: chat.userB
             })
-
-            // _id: chat._id,
-            // userA: chat.userA,
-            // userB: chat.userB,
-            // lastMessage: chat.messages.length ? chat.messages[chat.messages.length - 1] : null,
-            // name: userName,
-            // lastUpdated: chat.lastUpdated,
-            // others_id: user_id
         }
 
     })
@@ -288,6 +270,7 @@ io.on('connection', (socket) => {
         }
     })
 
+/*4*/
     socket.on('send invite', async ({my_id, phoneNo, firstMessage}) => {
         const myAccount = await account_model.findById(my_id)
         const hisAccount = await account_model.findOne({ phoneNo: phoneNo })
@@ -353,7 +336,7 @@ io.on('connection', (socket) => {
         }
     })
 
-
+/*5*/
     socket.on('delete for me', async ({ chat_id, my_id, selecteds }) => {
         const Chat = await chat_model.findById(chat_id)
         if(Chat) {
@@ -391,6 +374,7 @@ io.on('connection', (socket) => {
         }
     })
     
+/*6*/
     socket.on('delete for everyone', async ({ chat_id, my_id, his_id, selecteds }) => {
         const Chat = await chat_model.findById(chat_id)
         if(Chat) {
@@ -440,7 +424,7 @@ io.on('connection', (socket) => {
         }
     })
 
-/*4*/
+/*7*/
     socket.on('disconnect', async () => {
         const user = await account_model.findOne({ socketId: socket.id })
         if(user) {
@@ -478,6 +462,22 @@ io.on('connection', (socket) => {
             await anyLastOpenedChat.save()
         }
 
+    })
+
+/* WebRTC Signaling Events */
+    // Send offer from caller → callee
+    socket.on('webrtc-offer', ({ toSocketId, offer }) => {
+        io.to(toSocketId).emit('webrtc-offer', { fromSocketId: socket.id, offer })
+    })
+
+    // Send answer from callee → caller
+    socket.on('webrtc-answer', ({ toSocketId, answer }) => {
+        io.to(toSocketId).emit('webrtc-answer', { fromSocketId: socket.id, answer })
+    })
+
+    // Relay ICE candidates
+    socket.on('webrtc-ice-candidate', ({ toSocketId, candidate }) => {
+        io.to(toSocketId).emit('webrtc-ice-candidate', { fromSocketId: socket.id, candidate })
     })
 })
 
