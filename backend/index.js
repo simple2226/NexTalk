@@ -192,7 +192,8 @@ io.on('connection', (socket) => {
             socket.emit('get chat', { user: other_user, chat, request })
 
             UTU = chat.userA.id === my_id ? 'userB' : 'userA'
-            if(chat[UTU].socketId) { io.to(chat[UTU].socketId).emit('seen?', [...seenTheMessages]) }
+            if(chat[UTU].socketId)
+                { io.to(chat[UTU].socketId).emit('update messages', {ids: [...seenTheMessages], update: {seen: true}}) }
             
             socket.emit('receive updated chatList', {
                 _id: chat._id,
@@ -204,7 +205,8 @@ io.on('connection', (socket) => {
     })
 
 /*3*/
-    socket.on('send message', async ({sender_id, receiver_id, chat_id, message}) => {
+    socket.on('send message', async ({sender_id, receiver_id, chat_id, callOffer, message}) => {
+        // console.log(callOffer)
         const from = await account_model.findById(sender_id)
         const to = await account_model.findById(receiver_id)
         let UTU
@@ -218,11 +220,23 @@ io.on('connection', (socket) => {
             }
 
             const seen = chat[UTU].socketId ? true : false
-            chat.messages.push({
+            if(callOffer === null) chat.messages.push({
                 doc_id: chat._id,
                 sender: sender_id,
                 message: message,
                 seen: seen
+            })
+            else chat.messages.push({
+                doc_id: chat._id,
+                sender: sender_id,
+                message: message,
+                seen: seen,
+                isCall: {
+                    isIt: true,
+                    caller: sender_id,
+                    callee: receiver_id,
+                    callOffer: callOffer
+                }
             })
 
             chat.lastUpdated = Date.now()
@@ -387,7 +401,7 @@ io.on('connection', (socket) => {
             
             let UTU = Chat.userA.id === his_id ? 'userA' : 'userB'
             if(Chat[UTU].socketId) {
-                io.to(Chat[UTU].socketId).emit('deleted for everyone', [...set])
+                io.to(Chat[UTU].socketId).emit('update messages', {ids: [...set], update: {deletedForBoth: true}})
             }
 
             let lastMessage = null
@@ -465,19 +479,72 @@ io.on('connection', (socket) => {
     })
 
 /* WebRTC Signaling Events */
+
     // Send offer from caller → callee
-    socket.on('webrtc-offer', ({ toSocketId, offer }) => {
-        io.to(toSocketId).emit('webrtc-offer', { fromSocketId: socket.id, offer })
+    // socket.on('webrtc-offer', ({ toSocketId, offer }) => {
+    //     io.to(toSocketId).emit('webrtc-offer', { fromSocketId: socket.id, offer })
+    // })
+    
+    // Send answer from callee → caller
+    socket.on('webrtc-answer', async ({ user_id, answer, chat_id, message_id }) => {
+        const Chat = await chat_model.findById(chat_id)
+        const UserSocket = await account_model.findById(user_id, { socketId: 1 })
+        let index = Chat.messages.length - 1
+        while(index >= 0 && Chat.messages[index]._id.toString() !== message_id) index--;
+        if(index >= 0) {
+            Chat.messages[index].isCall.status = 'Answered'
+            await Chat.save()
+            socket.emit('update messages', {ids: [message_id], update: Chat.messages[index].toObject()})
+            
+            let UTU = Chat.userA.id === user_id ? 'userA' : 'userB'
+            if(Chat[UTU].socketId)
+                io.to(UserSocket).emit('update messages', {ids: [message_id], update: Chat.messages[index].toObject()});
+        }
+        io.to(UserSocket).emit('webrtc-answer', { fromSocketId: socket.id, answer })
     })
 
-    // Send answer from callee → caller
-    socket.on('webrtc-answer', ({ toSocketId, answer }) => {
-        io.to(toSocketId).emit('webrtc-answer', { fromSocketId: socket.id, answer })
+    // Send missed call from caller → callee
+    socket.on('webrtc-missed', async ({ user_id, chat_id, message_id }) => {
+        const Chat = await chat_model.findOne(chat_id)
+        const UserSocket = await account_model.findById(user_id, { socketId: 1 })
+        let index = Chat.messages.length - 1
+        while(index >= 0 && Chat.messages[index]._id.toString() !== message_id) index--;
+        if(index >= 0) {
+            Chat.messages[index].isCall.status = 'Missed'
+            Chat.messages[index].isCall.callOffer = null
+            await Chat.save()
+            socket.emit('update messages', {ids: [message_id], update: Chat.messages[index].toObject()})
+            
+            let UTU = Chat.userA.id === user_id ? 'userA' : 'userB'
+            if(Chat[UTU].socketId)
+                io.to(UserSocket).emit('update messages', {ids: [message_id], update: Chat.messages[index].toObject()});
+        }
+        io.to(UserSocket).emit('webrtc-missed', { fromSocketId: socket.id })
+    })
+
+    // Send rejection from callee → caller
+    socket.on('webrtc-rejected', async ({ user_id, chat_id, message_id }) => {
+        const Chat = await chat_model.findById(chat_id)
+        const UserSocket = await account_model.findById(user_id, { socketId: 1 })
+        let index = Chat.messages.length - 1
+        while(index >= 0 && Chat.messages[index]._id.toString() !== message_id) index--;
+        if(index >= 0) {
+            Chat.messages[index].isCall.status = 'Rejected'
+            Chat.messages[index].isCall.callOffer = null
+            await Chat.save()
+            socket.emit('update messages', {ids: [message_id], update: Chat.messages[index].toObject()})
+            
+            let UTU = Chat.userA.id === user_id ? 'userA' : 'userB'
+            if(Chat[UTU].socketId)
+                io.to(UserSocket).emit('update messages', {ids: [message_id], update: Chat.messages[index].toObject()});
+        }
+        io.to(UserSocket).emit('webrtc-rejected', { fromSocketId: socket.id })
     })
 
     // Relay ICE candidates
-    socket.on('webrtc-ice-candidate', ({ toSocketId, candidate }) => {
-        io.to(toSocketId).emit('webrtc-ice-candidate', { fromSocketId: socket.id, candidate })
+    socket.on('webrtc-ice-candidate', async ({ user_id, candidate }) => {
+        const UserSocket = await account_model.findById(user_id, { socketId: 1 })
+        io.to(UserSocket).emit('webrtc-ice-candidate', { fromSocketId: socket.id, candidate })
     })
 })
 

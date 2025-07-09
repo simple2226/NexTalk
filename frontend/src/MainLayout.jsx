@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useRef } from 'react'
 import { useState } from 'react'
 import ChatArea from './ChatArea'
 import ChatList from './ChatList'
@@ -9,6 +9,10 @@ import Authorise from './Authorise'
 import { io } from 'socket.io-client'
 import CloseIcon from './assets/CloseIcon'
 import LoadingChats from './LoadingChats'
+import { motion } from "framer-motion"
+import VideoChatIcon from './assets/VideoChatIcon'
+import MicIcon from './assets/MicIcon'
+import HangUpIcon from './assets/HangUpIcon'
 
 export default function MainLayout() {
     const [verify, setVerify] = useState(0)
@@ -22,6 +26,15 @@ export default function MainLayout() {
     const [chatInfo, setChatInfo] = useState({ chat_id: null, my_id: null, user_id: null })
     const [socket, setSocket] = useState(null)
     const navigate = useNavigate()
+    const AppRef = useRef(null)
+    const [isOnCall, setIsOnCall] = useState(false)
+    const [callStatus, setCallStatus] = useState('idle')
+
+    const peerConnectionRef = useRef(null);
+    const localVideoRef = useRef(null);
+    const remoteVideoRef = useRef(null);
+    const pendingCandidatesRef = useRef([]);
+    const callTimeoutRef = useRef(null);
 
     useEffect(() => {
         const verify = async () => {
@@ -106,11 +119,33 @@ export default function MainLayout() {
         (dataFetched == 0 ?
             <LoadingChats/>
             :
-            <div className='animate-outToIn relative h-full w-full'>
+            <div ref={AppRef} className='animate-outToIn relative h-full w-full'>
                 <div className='flex'>
-                    <PersonDetails addNewContact={addNewContact} setAddNewContact={setAddNewContact}/>
-                    <ChatList data={data} account={account} setChatInfo={setChatInfo}/>
-                    <ChatArea account={account} chatInfo={chatInfo} socket={socket}/>
+                    <PersonDetails
+                        addNewContact={addNewContact}
+                        setAddNewContact={setAddNewContact}
+                    />
+
+                    <ChatList
+                        data={data}
+                        account={account}
+                        setChatInfo={setChatInfo}
+                    />
+
+                    <ChatArea
+                        connectionVars={{
+                            peerConnectionRef,
+                            localVideoRef,
+                            remoteVideoRef,
+                            pendingCandidatesRef,
+                            callTimeoutRef
+                        }}
+                        isOnCall={isOnCall}
+                        setIsOnCall={setIsOnCall}
+                        account={account}
+                        chatInfo={chatInfo}
+                        socket={socket}
+                    />
                 </div>
                 {addNewContact ?
                     <div className='animate-showUp bg-black backdrop-blur-md absolute z-[999999] left-0 top-0 text-white h-full w-full flex items-center justify-center'>
@@ -167,6 +202,48 @@ export default function MainLayout() {
                     :
                     null
                 }
+                <div className={`flex flex-col ${!isOnCall ? 'hidden' : ''} z-[9999999999] absolute top-0 left-0 h-[100vh] w-[100vw] rounded-4xl`}
+                    style={{
+                        backgroundImage: 'radial-gradient(circle, #5d5c6e, #575668, #515062, #4c4b5c, #464556, #424151, #3d3c4b, #393846, #343340, #302f3a, #2b2a35, #27262f)'
+                    }}
+                >
+                    <motion.div
+                        className='bg-[#1f1e1a] rounded-xl'
+                        drag
+                        dragConstraints={AppRef}
+                        style={{
+                            zIndex: 99999999,
+                            width: 300,
+                            height: 150,
+                            position: "absolute",
+                            bottom: '30px',
+                            right: '30px',
+                        }}
+                    >
+                        <video className='h-full w-full rounded-xl' ref={localVideoRef} autoPlay playsInline></video>
+                    </motion.div>
+                    {/* {remoteVideoRef.current === null ?
+                        <div className='h-full py-10 flex flex-col items-center justify-between'>
+                            <div className='flex flex-col text-[#ffffffe0]'>
+                                <div className='text-[3rem] font-semibold'>John Doe</div>
+                                <div className='font-[100]'>Calling...</div>
+                            </div>
+                        </div>
+                        : */}
+                        <video className='h-full w-full' ref={remoteVideoRef} autoPlay playsInline></video>
+                    {/* } */}
+                    <div className='absolute self-center bottom-10 flex gap-10 px-10 py-4 rounded-full text-white w-fit bg-[#0000006e]'>
+                        <button className='flex relative rounded-full p-3 hover:bg-[#ffffff2a]'>
+                            <div className='rotate-45 self-center left-[calc(54%-2px)] absolute h-[80%] w-[2px] rounded-full bg-white'></div>
+                            <VideoChatIcon/>
+                        </button>
+                        <button className='flex items-center justify-center relative rounded-full px-1 hover:bg-[#ffffff2a]'>
+                            <div className='rotate-45 self-center left-[calc(54%-2px)] absolute h-[80%] w-[2px] rounded-full bg-white'></div>
+                            <MicIcon/>
+                        </button>
+                        <button className={`${!isOnCall ? 'opacity-50' : ''} rounded-full p-3 bg-red-500`}><HangUpIcon/></button>
+                    </div>
+                </div>
             </div>
         )
     )

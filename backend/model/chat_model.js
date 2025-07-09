@@ -36,7 +36,9 @@ const Chat_Schema = mongoose.Schema({
             isIt: {type: Boolean, default: false},
             caller: {type: String, default: null},
             callee: {type: String, default: null},
-            status: {type: String, default: null}
+            status: {type: String, default: null},
+            callOffer: { type: mongoose.Schema.Types.Mixed, default: null },
+            typeOfCall: {type: String, default: 'Video'},
         }
     }]
 })

@@ -34,13 +34,19 @@ export default function ChatList({data, account, setChatInfo}) {
                             <div className={`${(item.userA.id === account._id ? item.userA.checked : item.userB.checked) ?
                             'text-[#ffffff6c]' : 'text-white font-semibold'}  text-[.9rem] text-nowrap`}>
                                 {item.lastMessage ? 
-                                    (item.lastMessage.deletedForBoth ? 
-                                        <div className='flex gap-2 items-center text-[#ffffff6c]'>
-                                            <NotAllowed size='10px' color='#ffffff6c'/> this message is deleted
-                                        </div> 
-                                        :
-                                        item.lastMessage.message
-                                    )
+                                    (() => {
+                                        if(item.lastMessage.deletedForBoth) {
+                                            return <div className='flex gap-2 items-center text-[#ffffff6c]'>
+                                                <NotAllowed size='10px' color='#ffffff6c'/> this message is deleted
+                                            </div>
+                                        }
+
+                                        if(item.lastMessage.isCall.isIt) {
+                                            return item.lastMessage.isCall.typeOfCall + ' Call'
+                                        }
+                                        
+                                        return item.lastMessage.message
+                                    })()
                                     :
                                     "Start the conversation!"
                                 }</div>

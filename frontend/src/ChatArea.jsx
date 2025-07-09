@@ -14,9 +14,7 @@ import DeleteIcon from './assets/DeleteIcon'
 import ChatIcon from './assets/ChatIcon'
 import NotAllowed from './assets/NotAllowed'
 
-import { motion } from "framer-motion";
-
-export default function ChatArea({account, chatInfo, socket}) {
+export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, account, chatInfo, socket }) {
     const [data, setData] = useState(null)
     const dataRef = useRef(null)
     const [status, setStatus] = useState('Offline')
@@ -32,16 +30,23 @@ export default function ChatArea({account, chatInfo, socket}) {
     const pickerRef = useRef(null)
     const chatAreaRef = useRef(null)
 
-    const peerConnectionRef = useRef(null);
-    const localVideoRef = useRef(null);
-    const remoteVideoRef = useRef(null);
-    const pendingCandidatesRef = useRef([]);
+    const {
+        peerConnectionRef,
+        localVideoRef,
+        remoteVideoRef,
+        pendingCandidatesRef,
+        callTimeoutRef
+    } = connectionVars
 
     const iceConfig = {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' }
         ]
     };
+
+    useEffect(() => {
+        console.log(remoteVideoRef.current)
+    }, [remoteVideoRef.current])
     
     useEffect(() => {
         if(!socket) return
@@ -51,26 +56,13 @@ export default function ChatArea({account, chatInfo, socket}) {
             setIsRequested(data.request)
         }
         const inTheChatfunc = (inTheChat) => { setInTheChat(inTheChat) }
-        const seen = (seenSet) => {
-            const s = new Set(seenSet)
+        const updateMessages = ({ids, update}) => {
+            const s = new Set(ids)
             setArr(prev => {
                 const newArr = [...prev]
                 for(let i = newArr.length - 1; i >= 0 && s.size > 0; i--) {
                     if(s.has(newArr[i]._id)) {
-                        newArr[i] = { ...newArr[i], seen: true }
-                        s.delete(newArr[i]._id)
-                    }
-                }
-                return newArr
-            })
-        }
-        const dfe = (deletedSet) => {
-            const s = new Set(deletedSet)
-            setArr(prev => {
-                const newArr = [...prev]
-                for(let i = newArr.length - 1; i >= 0 && s.size > 0; i--) {
-                    if(s.has(newArr[i]._id)) {
-                        newArr[i] = { ...newArr[i], deletedForBoth: true }
+                        newArr[i] = { ...newArr[i], ...update }
                         s.delete(newArr[i]._id)
                     }
                 }
@@ -79,83 +71,22 @@ export default function ChatArea({account, chatInfo, socket}) {
         }
         const currentStatus = (status) => { setStatus(status) }
         const receiveMessage = (message) => {
-            if(dataRef.current && message.doc_id === dataRef.current.chat._id)
+            if(dataRef.current && message.doc_id === dataRef.current.chat._id) {
+                if(message.sender === account._id && message.isCall.isIt) {
+                    callTimeoutRef.current = setTimeout(() => {
+                        cleanupConnection();
+                        socket.emit('webrtc-missed', { user_id: data.user._id, chat_id: data.chat._id, message_id: message._id })
+                    }, 30000);
+                }
                 setArr(prev => [...prev, message])
+            }
         }
         socketInstance.on('get chat', getChat)
         socketInstance.on('in the chat?', inTheChatfunc)
-        socketInstance.on('seen?', seen)
-        socketInstance.on('deleted for everyone', dfe)
+        socketInstance.on('update messages', updateMessages)
         socketInstance.on('current status', currentStatus)
         socketInstance.on('receive message', receiveMessage)
         
-        socketInstance.on("webrtc-offer", async ({ fromSocketId, offer }) => {
-            const peerConnection = new RTCPeerConnection(iceConfig);
-            peerConnectionRef.current = peerConnection;
-
-            peerConnection.oniceconnectionstatechange = () => {
-                console.log("ICE State:", peerConnection.iceConnectionState);
-            };
-            peerConnection.onconnectionstatechange = () => {
-                console.log("Connection State:", peerConnection.connectionState);
-            };
-            
-            // 3. Send ICE candidates to caller
-            peerConnection.onicecandidate = (event) => {
-                if (event.candidate) {
-                    socket.emit("webrtc-ice-candidate", {
-                        toSocketId: fromSocketId,
-                        candidate: event.candidate,
-                    });
-                }
-            };
-
-            // 4. Display remote stream
-            peerConnection.ontrack = (event) => {
-                const [remoteStream] = event.streams;
-                console.log("Received remote stream", remoteStream);
-                if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
-            };
-            
-            const localStream = await navigator.mediaDevices.getUserMedia({
-                video: true,
-                audio: true,
-            });
-
-            if (localVideoRef.current)
-                localVideoRef.current.srcObject = localStream;
-
-            localStream.getTracks().forEach((track) => {
-                peerConnection.addTrack(track, localStream);
-            });
-
-            await peerConnection.setRemoteDescription(
-                new RTCSessionDescription(offer)
-            );
-
-            for (const candidate of pendingCandidatesRef.current) {
-                try {
-                    await peerConnection.addIceCandidate(
-                        new RTCIceCandidate(candidate)
-                    );
-                } catch (err) {
-                    console.error("Error adding queued ICE candidate", err);
-                }
-            }
-            pendingCandidatesRef.current = [];
-
-            const answer = await peerConnection.createAnswer();
-            await peerConnection.setLocalDescription(answer);
-
-            // 2. Send answer to caller
-            socket.emit("webrtc-answer", {
-                toSocketId: fromSocketId,
-                answer,
-            });
-
-        });
-
-        // 5. Receive ICE candidate from caller
         socketInstance.on("webrtc-ice-candidate", async ({ candidate }) => {
             const pc = peerConnectionRef.current;
 
@@ -167,7 +98,6 @@ export default function ChatArea({account, chatInfo, socket}) {
             } else {
                 try {
                     await pc.addIceCandidate(new RTCIceCandidate(candidate));
-                    console.log('yo')
                 } catch (err) {
                     console.error("Error adding received ice candidate", err);
                 }
@@ -175,26 +105,51 @@ export default function ChatArea({account, chatInfo, socket}) {
         });
 
         socketInstance.on("webrtc-answer", async ({ answer }) => {
+            clearTimeout(callTimeoutRef.current);
             if (peerConnectionRef.current) {
                 await peerConnectionRef.current.setRemoteDescription(
                     new RTCSessionDescription(answer)
                 );
             }
+            setIsOnCall(true)
         });
+
+        socketInstance.on("webrtc-rejected", async () => {
+            cleanupConnection()
+        })
 
         return () => {
             socketInstance.off('get chat')
             socketInstance.off('in the chat?')
-            socketInstance.off('seen?')
-            socketInstance.off('deleted for everyone')
+            socketInstance.off('update messages')
             socketInstance.off('current status')
             socketInstance.off('receive message')
 
-            socketInstance.off('webrtc-offer')
             socketInstance.off('webrtc-ice-candidate');
             socketInstance.off('webrtc-answer');
         }
     }, [socket])
+
+    const cleanupConnection = () => {
+        clearTimeout(callTimeoutRef.current);
+        setIsOnCall(false)
+
+        if (peerConnectionRef.current) {
+            peerConnectionRef.current.close();
+            peerConnectionRef.current = null;
+        }
+    
+        if (localVideoRef.current?.srcObject) {
+            localVideoRef.current.srcObject.getTracks().forEach(track => track.stop());
+            localVideoRef.current.srcObject = null;
+        }
+    
+        if (remoteVideoRef.current?.srcObject) {
+            remoteVideoRef.current.srcObject = null;
+        }
+    
+        pendingCandidatesRef.current = [];
+    };
 
     const startCall = async () => {
         const peerConnection = new RTCPeerConnection(iceConfig);
@@ -207,42 +162,104 @@ export default function ChatArea({account, chatInfo, socket}) {
             console.log("Connection State:", peerConnection.connectionState);
         };
         
-        // Send local ICE candidates
         peerConnection.onicecandidate = event => {
           if (event.candidate) {
             socket.emit('webrtc-ice-candidate', {
-              toSocketId: data.user.socketId,
+              user_id: data.user._id,
               candidate: event.candidate
             });
           }
         };
     
-        // Receive remote stream
         peerConnection.ontrack = event => {
           const [remoteStream] = event.streams;
           console.log("Received remote stream", remoteStream);
           if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
         };
 
-        // Get local stream
         const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         if (localVideoRef.current) localVideoRef.current.srcObject = localStream;
         
-        // Add tracks to connection
         localStream.getTracks().forEach(track => {
             peerConnection.addTrack(track, localStream);
         });
     
-        // Create offer and send to callee
         const offer = await peerConnection.createOffer();
         await peerConnection.setLocalDescription(offer);
-    
-        socket.emit('webrtc-offer', {
-          toSocketId: data.user.socketId,
-          offer
+        
+        setIsOnCall(true)
+
+        return offer
+    }
+
+    const answerCall = async (message_id, offer) => {
+        const peerConnection = new RTCPeerConnection(iceConfig);
+        peerConnectionRef.current = peerConnection;
+
+        peerConnection.oniceconnectionstatechange = () => {
+            console.log("ICE State:", peerConnection.iceConnectionState);
+        };
+        peerConnection.onconnectionstatechange = () => {
+            console.log("Connection State:", peerConnection.connectionState);
+        };
+        
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+                socket.emit('webrtc-ice-candidate', {
+                  user_id: data.user._id,
+                  candidate: event.candidate,
+                });
+            }
+        };
+
+        peerConnection.ontrack = (event) => {
+            const [remoteStream] = event.streams;
+            if (remoteVideoRef.current) {
+                console.log("Received remote stream", remoteStream);
+                remoteVideoRef.current.srcObject = remoteStream;
+            }
+        };
+
+        const localStream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: true,
         });
-    
-    };
+
+        if (localVideoRef.current)
+            localVideoRef.current.srcObject = localStream;
+
+        localStream.getTracks().forEach((track) => {
+            peerConnection.addTrack(track, localStream);
+        });
+
+        await peerConnection.setRemoteDescription(
+            new RTCSessionDescription(offer)
+        );
+
+        for (const candidate of pendingCandidatesRef.current) {
+            try {
+                await peerConnection.addIceCandidate(
+                    new RTCIceCandidate(candidate)
+                );
+            } catch (err) {
+                console.error("Error adding queued ICE candidate", err);
+            }
+        }
+        pendingCandidatesRef.current = [];
+
+        const answer = await peerConnection.createAnswer();
+        await peerConnection.setLocalDescription(answer);
+
+        setIsOnCall(true)
+
+        socket.emit("webrtc-answer", {
+            user_id: data.user._id,
+            answer,
+            chat_id: data.chat._id,
+            message_id
+        })
+
+    }
     
     useEffect(() => {
         if(!data) return
@@ -347,7 +364,11 @@ export default function ChatArea({account, chatInfo, socket}) {
                         {!isRequested ?
                         <>
                         <button className='active:opacity-55 cursor-pointer'><VoiceChatIcon size='24'/></button>
-                        <button onClick={() => startCall(data.user.socketId)} className='active:opacity-55 cursor-pointer'><VideoChatIcon/></button>
+                        <button onClick={async () => {
+                            if(isOnCall) return
+                            const callOffer = await startCall()
+                            socket.emit('send message', {sender_id: account._id, receiver_id: chatInfo.user_id, chat_id: data.chat._id, callOffer, message: input.trim()})
+                        }} className={`${isOnCall ? 'opacity-55' : 'active:opacity-55'} cursor-pointer`}><VideoChatIcon/></button>
                         <button onClick={() => setOpenInfo(true)} className='active:opacity-55 cursor-pointer'><UserInfoIcon/></button>
                         </>
                             :
@@ -372,54 +393,40 @@ export default function ChatArea({account, chatInfo, socket}) {
             </div>
 
             <div ref={chatAreaRef} className='relative overflow-x-hidden pt-3 flex flex-col gap-2 overflow-y-auto w-full h-full'>
-                <motion.div
-                    drag
-                    dragConstraints={chatAreaRef}
-                    style={{
-                        zIndex: 99999999,
-                        width: 300,
-                        height: 150,
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                    }}
-                >
-                    <video className='border border-white' ref={remoteVideoRef} autoPlay playsInline />
-                    <video className='border border-white' ref={localVideoRef} autoPlay playsInline />
-                </motion.div>
                 {arr.map((item, index) => (
-                        <div onClick={() => {
-                            if(selecteds.length) {
-                                if(!item.selected) {
-                                    setSelecteds(prev => [...prev, {message_id: item._id, sender: item.sender, deletedForBoth: item.deletedForBoth}])
-                                    setArr(prev => {
-                                        const newArr = [...prev]
-                                        newArr[index] = {...newArr[index], selected: true}
-                                        return newArr
-                                    })
-                                } else {
-                                    setSelecteds(prev => prev.filter(e => e.message_id !== item._id))
-                                    setArr(prev => {
-                                        const newArr = [...prev]
-                                        newArr[index] = {...newArr[index], selected: false}
-                                        return newArr
-                                    })
-                                }
+                    <div onClick={() => {
+                        if(selecteds.length) {
+                            if(!item.selected) {
+                                setSelecteds(prev => [...prev, {message_id: item._id, sender: item.sender, deletedForBoth: item.deletedForBoth}])
+                                setArr(prev => {
+                                    const newArr = [...prev]
+                                    newArr[index] = {...newArr[index], selected: true}
+                                    return newArr
+                                })
+                            } else {
+                                setSelecteds(prev => prev.filter(e => e.message_id !== item._id))
+                                setArr(prev => {
+                                    const newArr = [...prev]
+                                    newArr[index] = {...newArr[index], selected: false}
+                                    return newArr
+                                })
                             }
-                        }} key={index} className={`px-5 py-2 ${selecteds.length ? 'cursor-pointer' : ''} ${item.selected ? 'bg-[#ffffff2d]' : ''} w-full group relative flex flex-col ${item.sender !== account._id ? 'items-start self-start' : 'items-end self-end'}`}>
-                            <h1 style={{
-                                wordBreak: 'break-word',
-                                whiteSpace: 'pre-wrap',
-                                overflowWrap: 'break-word',
-                            }} className={`flex items-center relative font-[100] px-4 p-3 text-left text-[.8rem] max-w-[350px] bg-[#3797F0] text-white rounded-2xl ${item.sender !== account._id ? 'rounded-bl-none' : 'rounded-br-none'}`}>
-                                <button onClick={() => {
-                                    setSelecteds(prev => [...prev, {message_id: item._id, sender: item.sender, deletedForBoth: item.deletedForBoth}])
-                                    setArr(prev => {
-                                        const newArr = [...prev]
-                                        newArr[index] = {...newArr[index], selected: true}
-                                        return newArr
-                                    })
-                                }} className={`hidden ${selecteds.length ? '' : 'group-hover:block'} absolute ${item.sender !== account._id ? '-right-10' : '-left-[2.3rem]'} text-[.8rem] font-normal text-[#ffffff7a] hover:text-white`}>More</button>
+                        }
+                    }} key={index} className={`px-5 py-2 ${selecteds.length ? 'cursor-pointer' : ''} ${item.selected ? 'bg-[#ffffff2d]' : ''} w-full group relative flex flex-col ${item.sender !== account._id ? 'items-start self-start' : 'items-end self-end'}`}>
+                        <h1 style={{
+                            wordBreak: 'break-word',
+                            whiteSpace: 'pre-wrap',
+                            overflowWrap: 'break-word',
+                        }} className={`flex items-center relative font-[100] px-4 p-3 text-left text-[.8rem] max-w-[350px] bg-[#3797F0] text-white rounded-2xl ${item.sender !== account._id ? 'rounded-bl-none' : 'rounded-br-none'}`}>
+                            <button onClick={() => {
+                                setSelecteds(prev => [...prev, {message_id: item._id, sender: item.sender, deletedForBoth: item.deletedForBoth}])
+                                setArr(prev => {
+                                    const newArr = [...prev]
+                                    newArr[index] = {...newArr[index], selected: true}
+                                    return newArr
+                                })
+                            }} className={`hidden ${selecteds.length ? '' : 'group-hover:block'} absolute ${item.sender !== account._id ? '-right-10' : '-left-[2.3rem]'} text-[.8rem] font-normal text-[#ffffff7a] hover:text-white`}>More</button>
+                            {!item.isCall.isIt ?
                                 <div className={`${item.deletedForBoth ? 'italic' : ''}`}>
                                     {item.deletedForBoth ?
                                         <div className='flex items-center'><NotAllowed size='10px' color='#ffffff'/> this message is deleted</div>
@@ -427,29 +434,55 @@ export default function ChatArea({account, chatInfo, socket}) {
                                         item.message
                                     }
                                 </div>
-                            </h1>
-                            <h1 className='text-[0.8rem] font-semibold text-gray-500'>{
-                                (new Date(item.sentWhen)).toLocaleTimeString('en-US', {
-                                    hour: '2-digit',
-                                    minute: '2-digit',
-                                    hour12: true
-                                }).toString()
-                            }</h1>
-                            {(() => {
-                                if(index === arr.length - 1 && item.sender === account._id && item.seen === true) {
-                                    return <div className='text-white/50 text-[0.8rem]'>Seen</div>
-                                    const dtb = chatAreaRef.current.scrollHeight - chatAreaRef.current.scrollTop - chatAreaRef.current.clientHeight
-                                    if(dtb <= 25) {
-                                        chatAreaRef.current.scrollTo({
-                                            top: chatAreaRef.current.scrollHeight,
-                                            behavior: 'smooth'
-                                        })
+                                :
+                                <div className='flex flex-col gap-1 items-start'>
+                                    <div className='text-[.9rem] font-[400]'>{item.isCall.typeOfCall} Call : <b>Invite Sent</b></div>
+                                    {item.isCall.status === null ?
+                                        <div className='p-2 flex justify-center gap-2 rounded-md bg-[#286aa8]'>
+                                            <button
+                                                className='px-3 py-1 rounded-sm text-[.9rem] bg-[#ffffff3b]'
+                                                onClick={() => {
+                                                    if(isOnCall) return
+                                                    answerCall(item._id, item.isCall.callOffer)
+                                                }}
+                                            >Answer</button>
+                                            <button
+                                                className='px-3 py-1 rounded-sm text-[.9rem] bg-[#ff000057]'
+                                                onClick={() => {
+                                                    if(isOnCall) return
+                                                    socket.emit('webrtc-rejected', { user_id: data.user._id, chat_id: data.chat._id, message_id: item._id })
+                                                }}
+                                            >Decline</button>
+                                        </div>
+                                        :
+                                        <div className='p-2 flex justify-center gap-2 rounded-md bg-[#286aa8]'>
+                                            <div className='px-3 py-1 rounded-sm text-[.9rem] bg-[#ffffff3b]'>{item.isCall.status}</div>
+                                        </div>
                                     }
+                                </div>
+                            }
+                        </h1>
+                        <h1 className='text-[0.8rem] font-semibold text-gray-500'>{
+                            (new Date(item.sentWhen)).toLocaleTimeString('en-US', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                hour12: true
+                            }).toString()
+                        }</h1>
+                        {(() => {
+                            if(index === arr.length - 1 && item.sender === account._id && item.seen === true) {
+                                return <div className='text-white/50 text-[0.8rem]'>Seen</div>
+                                const dtb = chatAreaRef.current.scrollHeight - chatAreaRef.current.scrollTop - chatAreaRef.current.clientHeight
+                                if(dtb <= 25) {
+                                    chatAreaRef.current.scrollTo({
+                                        top: chatAreaRef.current.scrollHeight,
+                                        behavior: 'smooth'
+                                    })
                                 }
-                            })()}
-                        </div>
-                    )
-                )}
+                            }
+                        })()}
+                    </div>
+                ))}
             </div>
 
 
@@ -467,7 +500,7 @@ export default function ChatArea({account, chatInfo, socket}) {
                     />
                     <button onClick={e => {
                         if(input.length == 0) return
-                        socket.emit('send message', {sender_id: account._id, receiver_id: chatInfo.user_id, chat_id: data.chat._id, message: input.trim()})
+                        socket.emit('send message', {sender_id: account._id, receiver_id: chatInfo.user_id, chat_id: data.chat._id, callOffer: null, message: input.trim()})
                         setInput('')
                     }} className='text-[#3797F0] px-2 cursor-pointer active:opacity-55'>Send</button>
                 </div>
