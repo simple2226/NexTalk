@@ -34,8 +34,10 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
         peerConnectionRef,
         localVideoRef,
         remoteVideoRef,
-        pendingCandidatesRef,
-        callTimeoutRef
+        callTimeoutRef,
+        hangupArgs,
+        callerName,
+        setHasRemoteStream
     } = connectionVars
 
     const iceConfig = {
@@ -43,10 +45,6 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
           { urls: 'stun:stun.l.google.com:19302' }
         ]
     };
-
-    useEffect(() => {
-        console.log(remoteVideoRef.current)
-    }, [remoteVideoRef.current])
     
     useEffect(() => {
         if(!socket) return
@@ -75,8 +73,9 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
                 if(message.sender === account._id && message.isCall.isIt) {
                     callTimeoutRef.current = setTimeout(() => {
                         cleanupConnection();
-                        socket.emit('webrtc-missed', { user_id: data.user._id, chat_id: data.chat._id, message_id: message._id })
+                        socket.emit('webrtc-missed', { user_id: dataRef.current.user._id, chat_id: dataRef.current.chat._id, message_id: message._id })
                     }, 30000);
+                    hangupArgs.current = {...hangupArgs.current, message_id: message._id}
                 }
                 setArr(prev => [...prev, message])
             }
@@ -89,12 +88,8 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
         
         socketInstance.on("webrtc-ice-candidate", async ({ candidate }) => {
             const pc = peerConnectionRef.current;
-
-            if (!pc || !candidate) return;
-
-            if (!pc.remoteDescription || pc.remoteDescription.type === "") {
-                // Remote description not set yet – queue the candidate
-                pendingCandidatesRef.current.push(candidate);
+            if (!pc.remoteDescription || pc.remoteDescription.type === "") { // Remote description not set yet – queue the candidate
+                return
             } else {
                 try {
                     await pc.addIceCandidate(new RTCIceCandidate(candidate));
@@ -111,23 +106,15 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
                     new RTCSessionDescription(answer)
                 );
             }
-            setIsOnCall(true)
         });
 
         socketInstance.on("webrtc-rejected", async () => {
             cleanupConnection()
         })
 
-        return () => {
-            socketInstance.off('get chat')
-            socketInstance.off('in the chat?')
-            socketInstance.off('update messages')
-            socketInstance.off('current status')
-            socketInstance.off('receive message')
-
-            socketInstance.off('webrtc-ice-candidate');
-            socketInstance.off('webrtc-answer');
-        }
+        socketInstance.on('webrtc-hangup', async () => {
+            cleanupConnection()
+        })
     }, [socket])
 
     const cleanupConnection = () => {
@@ -147,35 +134,13 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
         if (remoteVideoRef.current?.srcObject) {
             remoteVideoRef.current.srcObject = null;
         }
-    
-        pendingCandidatesRef.current = [];
+        setHasRemoteStream(false)
     };
 
     const startCall = async () => {
+        setIsOnCall(true)
         const peerConnection = new RTCPeerConnection(iceConfig);
         peerConnectionRef.current = peerConnection;
-
-        peerConnection.oniceconnectionstatechange = () => {
-            console.log("ICE State:", peerConnection.iceConnectionState);
-        };
-        peerConnection.onconnectionstatechange = () => {
-            console.log("Connection State:", peerConnection.connectionState);
-        };
-        
-        peerConnection.onicecandidate = event => {
-          if (event.candidate) {
-            socket.emit('webrtc-ice-candidate', {
-              user_id: data.user._id,
-              candidate: event.candidate
-            });
-          }
-        };
-    
-        peerConnection.ontrack = event => {
-          const [remoteStream] = event.streams;
-          console.log("Received remote stream", remoteStream);
-          if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
-        };
 
         const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         if (localVideoRef.current) localVideoRef.current.srcObject = localStream;
@@ -183,25 +148,51 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
         localStream.getTracks().forEach(track => {
             peerConnection.addTrack(track, localStream);
         });
-    
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
         
-        setIsOnCall(true)
+        const iceCandidates = []
+        peerConnection.onicecandidate = (event) => {
+            if (event.candidate) iceCandidates.push(event.candidate)
+        }
+    
+        peerConnection.ontrack = (event) => {
+            const [remoteStream] = event.streams;
+            if(remoteVideoRef.current) {
+                remoteVideoRef.current.srcObject = remoteStream;
+                setHasRemoteStream(true)
+            }
+        };
 
-        return offer
+        await peerConnection.setLocalDescription(await peerConnection.createOffer());
+        
+        // ✅ Wait for ICE gathering to complete
+        await new Promise(resolve => {
+            const checkIce = () => {
+                if (peerConnection.iceGatheringState === 'complete') {
+                    resolve()
+                } else {
+                    setTimeout(checkIce, 100)
+                }
+            }
+            checkIce()
+        })
+
+        return {
+            offer: peerConnection.localDescription,
+            iceCandidates
+        }
     }
 
     const answerCall = async (message_id, offer) => {
+        setIsOnCall(true)
+
         const peerConnection = new RTCPeerConnection(iceConfig);
         peerConnectionRef.current = peerConnection;
 
-        peerConnection.oniceconnectionstatechange = () => {
-            console.log("ICE State:", peerConnection.iceConnectionState);
-        };
-        peerConnection.onconnectionstatechange = () => {
-            console.log("Connection State:", peerConnection.connectionState);
-        };
+        const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        if (localVideoRef.current) localVideoRef.current.srcObject = localStream;
+        localStream.getTracks().forEach((track) => {
+            peerConnection.addTrack(track, localStream);
+        });
         
         peerConnection.onicecandidate = (event) => {
             if (event.candidate) {
@@ -214,43 +205,28 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
 
         peerConnection.ontrack = (event) => {
             const [remoteStream] = event.streams;
-            if (remoteVideoRef.current) {
-                console.log("Received remote stream", remoteStream);
+            if(remoteVideoRef.current) {
                 remoteVideoRef.current.srcObject = remoteStream;
+                setHasRemoteStream(true)
             }
         };
 
-        const localStream = await navigator.mediaDevices.getUserMedia({
-            video: true,
-            audio: true,
-        });
-
-        if (localVideoRef.current)
-            localVideoRef.current.srcObject = localStream;
-
-        localStream.getTracks().forEach((track) => {
-            peerConnection.addTrack(track, localStream);
-        });
-
         await peerConnection.setRemoteDescription(
-            new RTCSessionDescription(offer)
+            new RTCSessionDescription(offer.offer)
         );
 
-        for (const candidate of pendingCandidatesRef.current) {
+        // ✅ Loop through and add each ICE candidate individually
+        for (const candidate of offer.iceCandidates) {
             try {
-                await peerConnection.addIceCandidate(
-                    new RTCIceCandidate(candidate)
-                );
+                await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
             } catch (err) {
-                console.error("Error adding queued ICE candidate", err);
+                console.error("Error adding ICE candidate", err);
             }
         }
-        pendingCandidatesRef.current = [];
 
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
 
-        setIsOnCall(true)
 
         socket.emit("webrtc-answer", {
             user_id: data.user._id,
@@ -258,11 +234,11 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
             chat_id: data.chat._id,
             message_id
         })
-
     }
     
     useEffect(() => {
         if(!data) return
+        hangupArgs.current = { user_id: data.user._id, chat_id: data.chat._id }
         dataRef.current = data
         setArr(data.chat.messages.filter(item => !item.deletedForOne.includes(account._id)).map(item => { return { ...item, selected: false } }))
     }, [data])
@@ -366,6 +342,7 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
                         <button className='active:opacity-55 cursor-pointer'><VoiceChatIcon size='24'/></button>
                         <button onClick={async () => {
                             if(isOnCall) return
+                            callerName.current = data.user.username
                             const callOffer = await startCall()
                             socket.emit('send message', {sender_id: account._id, receiver_id: chatInfo.user_id, chat_id: data.chat._id, callOffer, message: input.trim()})
                         }} className={`${isOnCall ? 'opacity-55' : 'active:opacity-55'} cursor-pointer`}><VideoChatIcon/></button>
@@ -426,7 +403,7 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
                                     return newArr
                                 })
                             }} className={`hidden ${selecteds.length ? '' : 'group-hover:block'} absolute ${item.sender !== account._id ? '-right-10' : '-left-[2.3rem]'} text-[.8rem] font-normal text-[#ffffff7a] hover:text-white`}>More</button>
-                            {!item.isCall.isIt ?
+                            {!item.isCall.isIt || item.deletedForBoth ?
                                 <div className={`${item.deletedForBoth ? 'italic' : ''}`}>
                                     {item.deletedForBoth ?
                                         <div className='flex items-center'><NotAllowed size='10px' color='#ffffff'/> this message is deleted</div>
@@ -438,11 +415,13 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
                                 <div className='flex flex-col gap-1 items-start'>
                                     <div className='text-[.9rem] font-[400]'>{item.isCall.typeOfCall} Call : <b>Invite Sent</b></div>
                                     {item.isCall.status === null ?
+                                        (item.isCall.caller !== account._id ?
                                         <div className='p-2 flex justify-center gap-2 rounded-md bg-[#286aa8]'>
                                             <button
                                                 className='px-3 py-1 rounded-sm text-[.9rem] bg-[#ffffff3b]'
                                                 onClick={() => {
                                                     if(isOnCall) return
+                                                    hangupArgs.current = {...hangupArgs.current, message_id: item._id}
                                                     answerCall(item._id, item.isCall.callOffer)
                                                 }}
                                             >Answer</button>
@@ -454,6 +433,9 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
                                                 }}
                                             >Decline</button>
                                         </div>
+                                        :
+                                        <></>
+                                        )
                                         :
                                         <div className='p-2 flex justify-center gap-2 rounded-md bg-[#286aa8]'>
                                             <div className='px-3 py-1 rounded-sm text-[.9rem] bg-[#ffffff3b]'>{item.isCall.status}</div>

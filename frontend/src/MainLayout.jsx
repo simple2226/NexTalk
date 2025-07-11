@@ -28,13 +28,43 @@ export default function MainLayout() {
     const navigate = useNavigate()
     const AppRef = useRef(null)
     const [isOnCall, setIsOnCall] = useState(false)
-    const [callStatus, setCallStatus] = useState('idle')
+    const [hasRemoteStream, setHasRemoteStream] = useState(false)
 
     const peerConnectionRef = useRef(null);
     const localVideoRef = useRef(null);
     const remoteVideoRef = useRef(null);
-    const pendingCandidatesRef = useRef([]);
     const callTimeoutRef = useRef(null);
+    const hangupArgs = useRef(null)
+    const callerName = useRef(null)
+
+    useEffect(() => {
+        if(!socket) return;
+        const handleBeforeUnload = () => {
+            if (peerConnectionRef.current) {
+                socket.emit('webrtc-hangup', hangupArgs.current);
+            }
+            socket.off()
+            setTimeout(() => {
+                socket.disconnect();
+            }, 100);
+        };
+    
+        window.addEventListener('beforeunload', handleBeforeUnload);
+    
+        return () => {
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+        };
+    }, [socket]);
+
+    useEffect(() => {
+        if(remoteVideoRef.current) remoteVideoRef.current.onloadedmetadata = () => {
+            remoteVideoRef.current.play().catch(console.error);
+        }
+    }, [remoteVideoRef.current])
+
+    useEffect(() => {
+        window.remoteRef = remoteVideoRef;
+    }, []);
 
     useEffect(() => {
         const verify = async () => {
@@ -81,14 +111,6 @@ export default function MainLayout() {
         socketInstance.on('receive updated chatList', receiveUpdatedChatList)
         socketInstance.on('repopualate chatList', callRegister)
         socketInstance.on('invitation error', catchInvErr)
-        
-        return () => {
-            socketInstance.off('receive chatlist', receiveChatList)
-            socketInstance.off('receive updated chatList', receiveUpdatedChatList)
-            socketInstance.off('repopualate chatList', callRegister)
-            socketInstance.off('invitation error', catchInvErr)
-            socketInstance.disconnect()
-        }
     }, [verify])
 
     useEffect(() => {
@@ -137,8 +159,10 @@ export default function MainLayout() {
                             peerConnectionRef,
                             localVideoRef,
                             remoteVideoRef,
-                            pendingCandidatesRef,
-                            callTimeoutRef
+                            callTimeoutRef,
+                            hangupArgs,
+                            callerName,
+                            setHasRemoteStream,
                         }}
                         isOnCall={isOnCall}
                         setIsOnCall={setIsOnCall}
@@ -202,7 +226,7 @@ export default function MainLayout() {
                     :
                     null
                 }
-                <div className={`flex flex-col ${!isOnCall ? 'hidden' : ''} z-[9999999999] absolute top-0 left-0 h-[100vh] w-[100vw] rounded-4xl`}
+                <div className={`animate-showUp flex flex-col ${!isOnCall ? 'hidden' : ''} z-[9999999999] absolute top-0 left-0 h-[100vh] w-[100vw] rounded-4xl`}
                     style={{
                         backgroundImage: 'radial-gradient(circle, #5d5c6e, #575668, #515062, #4c4b5c, #464556, #424151, #3d3c4b, #393846, #343340, #302f3a, #2b2a35, #27262f)'
                     }}
@@ -222,16 +246,13 @@ export default function MainLayout() {
                     >
                         <video className='h-full w-full rounded-xl' ref={localVideoRef} autoPlay playsInline></video>
                     </motion.div>
-                    {/* {remoteVideoRef.current === null ?
-                        <div className='h-full py-10 flex flex-col items-center justify-between'>
-                            <div className='flex flex-col text-[#ffffffe0]'>
-                                <div className='text-[3rem] font-semibold'>John Doe</div>
-                                <div className='font-[100]'>Calling...</div>
-                            </div>
+                    <div className={`${hasRemoteStream ? 'hidden' : ''} h-full py-10 flex flex-col items-center justify-between`}>
+                        <div className='flex flex-col text-[#ffffffe0]'>
+                            <div className='text-[3rem] font-semibold'>{callerName.current}</div>
+                            <div className='font-[100]'>Calling...</div>
                         </div>
-                        : */}
-                        <video className='h-full w-full' ref={remoteVideoRef} autoPlay playsInline></video>
-                    {/* } */}
+                    </div>
+                    <video className={`bg-black ${!hasRemoteStream ? 'hidden' : ''} h-full w-full`} ref={remoteVideoRef} autoPlay playsInline></video>
                     <div className='absolute self-center bottom-10 flex gap-10 px-10 py-4 rounded-full text-white w-fit bg-[#0000006e]'>
                         <button className='flex relative rounded-full p-3 hover:bg-[#ffffff2a]'>
                             <div className='rotate-45 self-center left-[calc(54%-2px)] absolute h-[80%] w-[2px] rounded-full bg-white'></div>
@@ -241,7 +262,13 @@ export default function MainLayout() {
                             <div className='rotate-45 self-center left-[calc(54%-2px)] absolute h-[80%] w-[2px] rounded-full bg-white'></div>
                             <MicIcon/>
                         </button>
-                        <button className={`${!isOnCall ? 'opacity-50' : ''} rounded-full p-3 bg-red-500`}><HangUpIcon/></button>
+                        <button className={`${!isOnCall ? 'opacity-50' : ''} rounded-full p-3 bg-red-500`}
+                            onClick={() => {
+                                socket.emit('webrtc-hangup', hangupArgs.current)
+                            }}
+                        >
+                            <HangUpIcon/>
+                        </button>
                     </div>
                 </div>
             </div>
