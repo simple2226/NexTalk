@@ -6,23 +6,36 @@ export default function SignUp() {
     const [phone, setPhone] = useState('')
     const [username, setUsename] = useState('')
     const [password, setPasswrod] = useState('')
+    const [invPhE, setInvPhE] = useState(false)
+    const [PhE, setPhE] = useState(false)
+    const [NE, setNE] = useState(false)
+    const [PswE, setPswE] = useState(false)
+    // const [FourOFour]
+    const [CnE, setCnE] = useState(false)
     const nav = useNavigate()
 
     const isValidIndianPhoneNumber = (input) => {
         const digitsOnly = input.replace(/\s+/g, '')
-    
-        const regex = /^(?:\+91|91)?[6-9]\d{9}$/
+        const regex = /^[6-9]\d{9}$/
         return regex.test(digitsOnly);
     }
 
     const getStarted = async () => {
         try {
-            if(!phone.length || !username.length || !password.length) {
-                console.error('Some empty input')
+            if(!phone.length) {
+                setPhE(true)
+                return
+            }
+            if(!username.length) {
+                setNE(true)
+                return
+            }
+            if(!password.length) {
+                setPswE(true)
                 return
             }
             if(!isValidIndianPhoneNumber(phone)) {
-                console.error('Invalide phone Number')
+                setInvPhE(true)
                 return
             }
             const response = await axios.post('api/accounts/add', {
@@ -34,7 +47,7 @@ export default function SignUp() {
             })
             nav('/')
         } catch (error) {
-            console.error(error)
+            
         }
     }
     return (
@@ -44,13 +57,10 @@ export default function SignUp() {
                 <div className='relative flex flex-col items-start gap-2'>
                     <div className='text-[1.1rem] text-[#ffffffd3]'>Your Phone Number</div>
                     <div className='flex items-center'>
-                        <input value={phone} onChange={e => setPhone(e.target.value)} placeholder='Enter here' className='bg-[#ffffff2a] rounded-sm p-2.5 w-[350px]' type='text'/>
-                        <button className='absolute right-4 text-[.7rem] hover:underline underline-offset-4 active:opacity-55'>Send Otp</button>
+                        <input value={phone} onChange={e => {
+                            setPhone(e.target.value)
+                        }} placeholder='Enter here' className='bg-[#ffffff2a] rounded-sm p-2.5 w-[350px]' type='text'/>
                     </div>
-                </div>
-                <div className='flex flex-col items-start gap-2'>
-                    <div className='text-[1.1rem] text-[#ffffffd3]'>Otp</div>
-                    <input placeholder='Enter here' className='bg-[#ffffff2a] rounded-sm p-2.5 w-[350px]' type="text"/>
                 </div>
                 <div className='flex flex-col items-start gap-2'>
                     <div className='text-[1.1rem] text-[#ffffffd3]'>Full Name</div>

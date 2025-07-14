@@ -183,7 +183,6 @@ io.on('connection', (socket) => {
             for(let i = chat.messages.length - 1; i >= 0 && chat.messages[i].sender === user_id && chat.messages[i].seen === false; i--) {
                 chat.messages[i].seen = true
                 seenTheMessages.add(chat.messages[i]._id.toString())
-                // console.log(chat.messages[i]._id.toString())
             }
 
             await chat.save()
@@ -205,8 +204,7 @@ io.on('connection', (socket) => {
     })
 
 /*3*/
-    socket.on('send message', async ({sender_id, receiver_id, chat_id, callOffer, message}) => {
-        // console.log(callOffer)
+    socket.on('send message', async ({sender_id, receiver_id, chat_id, callOffer, typeOfCall, message}) => {
         const from = await account_model.findById(sender_id)
         const to = await account_model.findById(receiver_id)
         let UTU
@@ -235,7 +233,8 @@ io.on('connection', (socket) => {
                     isIt: true,
                     caller: sender_id,
                     callee: receiver_id,
-                    callOffer: callOffer
+                    callOffer: callOffer,
+                    typeOfCall
                 }
             })
 
@@ -479,11 +478,6 @@ io.on('connection', (socket) => {
     })
 
 /* WebRTC Signaling Events */
-
-    // Send offer from caller → callee
-    // socket.on('webrtc-offer', ({ toSocketId, offer }) => {
-    //     io.to(toSocketId).emit('webrtc-offer', { fromSocketId: socket.id, offer })
-    // })
     
     // Send answer from callee → caller
     socket.on('webrtc-answer', async ({ user_id, answer, chat_id, message_id }) => {
@@ -542,7 +536,7 @@ io.on('connection', (socket) => {
     })
 
     // Hang up the call
-    socket.on('webrtc-hangup', async ({ user_id, chat_id, message_id }) => {
+    socket.on('webrtc-hangup', async ({ my_id, user_id, chat_id, message_id }) => {
         const Chat = await chat_model.findById(chat_id)
         const UserSocket = await account_model.findById(user_id, { socketId: 1 })
         let index = Chat.messages.length - 1
@@ -552,19 +546,29 @@ io.on('connection', (socket) => {
             Chat.messages[index].isCall.callOffer = null
             await Chat.save()
             socket.emit('update messages', {ids: [message_id], update: Chat.messages[index].toObject()})
-            socket.emit('webrtc-hangup')
+            socket.emit('webrtc-hangup', { user_id })
             
             let UTU = Chat.userA.id === user_id ? 'userA' : 'userB'
             if(Chat[UTU].socketId)
                 io.to(UserSocket.socketId).emit('update messages', {ids: [message_id], update: Chat.messages[index].toObject()});
         }
-        io.to(UserSocket.socketId).emit('webrtc-hangup', { fromSocketId: socket.id })
+        io.to(UserSocket.socketId).emit('webrtc-hangup', { user_id: my_id })
     })
 
     // Relay ICE candidates
     socket.on('webrtc-ice-candidate', async ({ user_id, candidate }) => {
         const UserSocket = await account_model.findById(user_id, { socketId: 1 })
         io.to(UserSocket.socketId).emit('webrtc-ice-candidate', { fromSocketId: socket.id, candidate })
+    })
+    
+    socket.on('webrtc-toggle-mic', async ({ my_id, user_id, audio }) => {
+        const UserSocket = await account_model.findById(user_id, { socketId: 1 })
+        io.to(UserSocket.socketId).emit('webrtc-toggle-mic', { user_id: my_id, audio })
+    })
+
+    socket.on('webrtc-toggle-cam', async ({ my_id, user_id, video }) => {
+        const UserSocket = await account_model.findById(user_id, { socketId: 1 })
+        io.to(UserSocket.socketId).emit('webrtc-toggle-cam', { user_id: my_id, video })
     })
 })
 

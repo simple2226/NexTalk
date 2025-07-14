@@ -30,18 +30,42 @@ export default function MainLayout() {
     const [isOnCall, setIsOnCall] = useState(false)
     const [hasRemoteStream, setHasRemoteStream] = useState(false)
 
-    const peerConnectionRef = useRef(null);
-    const localVideoRef = useRef(null);
-    const remoteVideoRef = useRef(null);
-    const callTimeoutRef = useRef(null);
-    const hangupArgs = useRef(null)
+    const peerConnectionRef = useRef(null)
+    const localVideoRef = useRef(null)
+    const remoteVideoRef = useRef(null)
+    const callTimeoutRef = useRef(null)
+    const userCallArgs = useRef(null)
     const callerName = useRef(null)
+    const [localCamOn, setLocalCamOn] = useState(true)
+    const [localMicOn, setLocalMicOn] = useState(true)
+    const [remoteCamOn, setRemoteCamOn] = useState(true)
+    const [remoteMicOn, setRemoteMicOn] = useState(true)
+
+    const toggleMic = () => {
+        if(!hasRemoteStream || localVideoRef.current === null) return;
+        const audioTrack = localVideoRef.current.srcObject?.getAudioTracks()[0];
+        if (audioTrack) {
+            audioTrack.enabled = !audioTrack.enabled;
+            setLocalMicOn(audioTrack.enabled);
+            socket.emit('webrtc-toggle-mic', {my_id: account._id, user_id: userCallArgs.current.user_id, audio: audioTrack.enabled})
+        }
+    };
+    
+    const toggleCam = () => {
+        if(!hasRemoteStream || localVideoRef.current === null) return;
+        const videoTrack = localVideoRef.current.srcObject?.getVideoTracks()[0];
+        if (videoTrack) {
+            videoTrack.enabled = !videoTrack.enabled;
+            setLocalCamOn(videoTrack.enabled);
+            socket.emit('webrtc-toggle-cam', {my_id: account._id, user_id: userCallArgs.current.user_id, video: videoTrack.enabled})
+        }
+    };
 
     useEffect(() => {
         if(!socket) return;
         const handleBeforeUnload = () => {
             if (peerConnectionRef.current) {
-                socket.emit('webrtc-hangup', hangupArgs.current);
+                socket.emit('webrtc-hangup', {my_id: account._id, ...userCallArgs.current});
             }
             socket.off()
             setTimeout(() => {
@@ -80,6 +104,7 @@ export default function MainLayout() {
         }
         verify()
     }, [])
+
     
     useEffect(() => {
         if(verify === 0) return
@@ -111,6 +136,15 @@ export default function MainLayout() {
         socketInstance.on('receive updated chatList', receiveUpdatedChatList)
         socketInstance.on('repopualate chatList', callRegister)
         socketInstance.on('invitation error', catchInvErr)
+
+        socketInstance.on('webrtc-toggle-mic', ({ user_id, audio }) => {
+            if(userCallArgs.current && userCallArgs.current.user_id === user_id)
+                setRemoteMicOn(audio)
+        })
+        socketInstance.on('webrtc-toggle-cam', ({ user_id, video }) => {
+            if(userCallArgs.current && userCallArgs.current.user_id === user_id)
+                setRemoteCamOn(video)
+        })
     }, [verify])
 
     useEffect(() => {
@@ -160,8 +194,12 @@ export default function MainLayout() {
                             localVideoRef,
                             remoteVideoRef,
                             callTimeoutRef,
-                            hangupArgs,
+                            userCallArgs,
                             callerName,
+                            setLocalMicOn,
+                            setRemoteMicOn,
+                            setLocalCamOn,
+                            setRemoteCamOn,
                             setHasRemoteStream,
                         }}
                         isOnCall={isOnCall}
@@ -231,6 +269,16 @@ export default function MainLayout() {
                         backgroundImage: 'radial-gradient(circle, #5d5c6e, #575668, #515062, #4c4b5c, #464556, #424151, #3d3c4b, #393846, #343340, #302f3a, #2b2a35, #27262f)'
                     }}
                 >
+                    {!remoteMicOn ?
+                        <div className='absolute top-[30px] right-[30px]'>
+                            <div className='flex items-center justify-center relative rounded-full px-1'>
+                                <div className='rotate-45 self-center left-[calc(54%-2px)] absolute h-[80%] w-[2px] rounded-full bg-white'></div>
+                                <MicIcon/>
+                            </div>
+                        </div>
+                        :
+                        <></>
+                    }
                     <motion.div
                         className='bg-[#1f1e1a] rounded-xl'
                         drag
@@ -246,25 +294,26 @@ export default function MainLayout() {
                     >
                         <video className='h-full w-full rounded-xl' ref={localVideoRef} autoPlay playsInline></video>
                     </motion.div>
-                    <div className={`${hasRemoteStream ? 'hidden' : ''} h-full py-10 flex flex-col items-center justify-between`}>
+                    <div className={`${hasRemoteStream && remoteCamOn ? 'hidden' : ''} h-full py-10 flex flex-col items-center justify-between`}>
                         <div className='flex flex-col text-[#ffffffe0]'>
                             <div className='text-[3rem] font-semibold'>{callerName.current}</div>
-                            <div className='font-[100]'>Calling...</div>
+                            <div className='font-[100]'>{!hasRemoteStream ? 'Calling...' : 'Connected'}</div>
                         </div>
                     </div>
-                    <video className={`bg-black ${!hasRemoteStream ? 'hidden' : ''} h-full w-full`} ref={remoteVideoRef} autoPlay playsInline></video>
+                    <video className={`bg-black ${!hasRemoteStream || !remoteCamOn ? 'hidden' : ''} h-full w-full`} ref={remoteVideoRef} autoPlay playsInline></video>
                     <div className='absolute self-center bottom-10 flex gap-10 px-10 py-4 rounded-full text-white w-fit bg-[#0000006e]'>
-                        <button className='flex relative rounded-full p-3 hover:bg-[#ffffff2a]'>
-                            <div className='rotate-45 self-center left-[calc(54%-2px)] absolute h-[80%] w-[2px] rounded-full bg-white'></div>
+                        <button onClick={() => toggleCam()} className={`flex relative rounded-full p-3 ${!hasRemoteStream ? 'opacity-50' : 'hover:bg-[#ffffff2a]'}`}>
+                            {!localCamOn ? <div className='rotate-45 self-center left-[calc(54%-2px)] absolute h-[80%] w-[2px] rounded-full bg-white'></div> : <></>}
                             <VideoChatIcon/>
                         </button>
-                        <button className='flex items-center justify-center relative rounded-full px-1 hover:bg-[#ffffff2a]'>
-                            <div className='rotate-45 self-center left-[calc(54%-2px)] absolute h-[80%] w-[2px] rounded-full bg-white'></div>
+                        <button onClick={() => toggleMic()} className={`flex items-center justify-center relative rounded-full px-1 ${!hasRemoteStream ? 'opacity-50' : 'hover:bg-[#ffffff2a]'}`}>
+                            {!localMicOn ? <div className='rotate-45 self-center left-[calc(54%-2px)] absolute h-[80%] w-[2px] rounded-full bg-white'></div> : <></>}
                             <MicIcon/>
                         </button>
                         <button className={`${!isOnCall ? 'opacity-50' : ''} rounded-full p-3 bg-red-500`}
                             onClick={() => {
-                                socket.emit('webrtc-hangup', hangupArgs.current)
+                                if(!userCallArgs.current || !userCallArgs.current.message_id) return
+                                socket.emit('webrtc-hangup', {my_id: account._id, ...userCallArgs.current})
                             }}
                         >
                             <HangUpIcon/>

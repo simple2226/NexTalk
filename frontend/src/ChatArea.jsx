@@ -35,8 +35,12 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
         localVideoRef,
         remoteVideoRef,
         callTimeoutRef,
-        hangupArgs,
+        userCallArgs,
         callerName,
+        setLocalMicOn,
+        setRemoteMicOn,
+        setLocalCamOn,
+        setRemoteCamOn,
         setHasRemoteStream
     } = connectionVars
 
@@ -75,7 +79,7 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
                         cleanupConnection();
                         socket.emit('webrtc-missed', { user_id: dataRef.current.user._id, chat_id: dataRef.current.chat._id, message_id: message._id })
                     }, 30000);
-                    hangupArgs.current = {...hangupArgs.current, message_id: message._id}
+                    userCallArgs.current = {...userCallArgs.current, message_id: message._id}
                 }
                 setArr(prev => [...prev, message])
             }
@@ -88,7 +92,7 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
         
         socketInstance.on("webrtc-ice-candidate", async ({ candidate }) => {
             const pc = peerConnectionRef.current;
-            if (!pc.remoteDescription || pc.remoteDescription.type === "") { // Remote description not set yet – queue the candidate
+            if (!pc.remoteDescription || pc.remoteDescription.type === "") {
                 return
             } else {
                 try {
@@ -112,8 +116,11 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
             cleanupConnection()
         })
 
-        socketInstance.on('webrtc-hangup', async () => {
-            cleanupConnection()
+        socketInstance.on('webrtc-hangup', async ({ user_id }) => {
+            if(userCallArgs.current && userCallArgs.current.user_id === user_id) {
+                cleanupConnection()
+                userCallArgs.current = null
+            }
         })
     }, [socket])
 
@@ -135,9 +142,14 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
             remoteVideoRef.current.srcObject = null;
         }
         setHasRemoteStream(false)
+        
+        setLocalMicOn(true)
+        setRemoteMicOn(true)
+        setLocalCamOn(true)
+        setRemoteCamOn(true)
     };
 
-    const startCall = async () => {
+    const startCall = async (video) => {
         setIsOnCall(true)
         const peerConnection = new RTCPeerConnection(iceConfig);
         peerConnectionRef.current = peerConnection;
@@ -148,6 +160,15 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
         localStream.getTracks().forEach(track => {
             peerConnection.addTrack(track, localStream);
         });
+
+        if(!video) {
+            const videoTrack = localVideoRef.current.srcObject?.getVideoTracks()[0];
+            if (videoTrack) {
+                videoTrack.enabled = false;
+                setLocalCamOn(false);
+                setRemoteCamOn(false)
+            }
+        }
         
         const iceCandidates = []
         peerConnection.onicecandidate = (event) => {
@@ -182,7 +203,7 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
         }
     }
 
-    const answerCall = async (message_id, offer) => {
+    const answerCall = async (message_id, offer, video) => {
         setIsOnCall(true)
 
         const peerConnection = new RTCPeerConnection(iceConfig);
@@ -194,6 +215,15 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
             peerConnection.addTrack(track, localStream);
         });
         
+        if(!video) {
+            const videoTrack = localVideoRef.current.srcObject?.getVideoTracks()[0];
+            if (videoTrack) {
+                videoTrack.enabled = false;
+                setLocalCamOn(false);
+                setRemoteCamOn(false)
+            }
+        }
+
         peerConnection.onicecandidate = (event) => {
             if (event.candidate) {
                 socket.emit('webrtc-ice-candidate', {
@@ -238,11 +268,10 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
     
     useEffect(() => {
         if(!data) return
-        hangupArgs.current = { user_id: data.user._id, chat_id: data.chat._id }
+        // userCallArgs.current = { user_id: data.user._id, chat_id: data.chat._id }
         dataRef.current = data
         setArr(data.chat.messages.filter(item => !item.deletedForOne.includes(account._id)).map(item => { return { ...item, selected: false } }))
     }, [data])
-
 
     useEffect(() => {
         setOpenInfo(false)
@@ -338,18 +367,42 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
                     </div>
                     <div className='flex gap-4 items center justify-self-end'>
                         {!isRequested ?
-                        <>
-                        <button className='active:opacity-55 cursor-pointer'><VoiceChatIcon size='24'/></button>
-                        <button onClick={async () => {
-                            if(isOnCall) return
-                            callerName.current = data.user.username
-                            const callOffer = await startCall()
-                            socket.emit('send message', {sender_id: account._id, receiver_id: chatInfo.user_id, chat_id: data.chat._id, callOffer, message: input.trim()})
-                        }} className={`${isOnCall ? 'opacity-55' : 'active:opacity-55'} cursor-pointer`}><VideoChatIcon/></button>
-                        <button onClick={() => setOpenInfo(true)} className='active:opacity-55 cursor-pointer'><UserInfoIcon/></button>
-                        </>
+                            <>
+                                <button
+                                    onClick={async () => {
+                                        if(isOnCall) return
+                                        callerName.current = data.user.username
+                                        userCallArgs.current = { user_id: data.user._id, chat_id: data.chat._id }
+                                        const callOffer = await startCall(true)
+                                        socket.emit('send message', {sender_id: account._id, receiver_id: chatInfo.user_id, chat_id: data.chat._id, callOffer, typeOfCall: 'Video', message: input.trim()})
+                                        }}
+                                        className={`${isOnCall ? 'opacity-55' : 'active:opacity-55'} cursor-pointer`}
+                                >
+                                    <VideoChatIcon/>
+                                </button>
+
+                                <button
+                                    onClick={async () => {
+                                        if(isOnCall) return
+                                        callerName.current = data.user.username
+                                        userCallArgs.current = { user_id: data.user._id, chat_id: data.chat._id }
+                                        const callOffer = await startCall(false)
+                                        socket.emit('send message', {sender_id: account._id, receiver_id: chatInfo.user_id, chat_id: data.chat._id, callOffer, typeOfCall: 'Audio', message: input.trim()})
+                                    }}
+                                    className={`${isOnCall ? 'opacity-55' : 'active:opacity-55'} cursor-pointer`}
+                                >
+                                    <VoiceChatIcon size='24'/>
+                                </button>
+
+                                <button
+                                    onClick={() => setOpenInfo(true)}
+                                    className='active:opacity-55 cursor-pointer'
+                                >
+                                    <UserInfoIcon/>
+                                </button>
+                            </>
                             :
-                        <></>
+                            <></>
                         }
                     </div></>)
                     :
@@ -421,8 +474,9 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
                                                 className='px-3 py-1 rounded-sm text-[.9rem] bg-[#ffffff3b]'
                                                 onClick={() => {
                                                     if(isOnCall) return
-                                                    hangupArgs.current = {...hangupArgs.current, message_id: item._id}
-                                                    answerCall(item._id, item.isCall.callOffer)
+                                                    callerName.current = data.user.username
+                                                    userCallArgs.current = {user_id: data.user._id, chat_id: data.chat._id, message_id: item._id}
+                                                    answerCall(item._id, item.isCall.callOffer, item.isCall.typeOfCall === 'Video')
                                                 }}
                                             >Answer</button>
                                             <button
@@ -536,10 +590,6 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
                         <div className='opacity-70'><VoiceChatIcon size='11.5'/></div>
                         <h1 className='opacity-70'>Contact Number &nbsp;<u className='underline-offset-4'>{data.user.phoneNo}</u></h1>
                     </div>
-                </div>
-                <div className='mt-14 w-[80%] gap-1 items-start flex flex-col font-[100] text-[1.2rem] text-red-500'>
-                    <button className='underline-offset-4 hover:underline'>Delete Chat</button>
-                    <button className='underline-offset-4 hover:underline'>Block <b className='font-semibold'>{data.user.username}</b></button>
                 </div>
             </div>
             :
