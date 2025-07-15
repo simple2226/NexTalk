@@ -1,4 +1,4 @@
-const dbConnect = require('./config/database')
+const { dbConnect } = require('./config/database')
 const cookieParser = require('cookie-parser')
 const { createServer } = require('node:http')
 const { Server } = require('socket.io')

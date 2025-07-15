@@ -13,8 +13,9 @@ import ReplyIcon from './assets/ReplyIcon'
 import DeleteIcon from './assets/DeleteIcon'
 import ChatIcon from './assets/ChatIcon'
 import NotAllowed from './assets/NotAllowed'
+import SelectAll from './assets/SelectAll'
 
-export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, account, chatInfo, socket }) {
+export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, account, chatInfo, socket, dateNow }) {
     const [data, setData] = useState(null)
     const dataRef = useRef(null)
     const [status, setStatus] = useState('Offline')
@@ -24,6 +25,8 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
     const [deleteMessagesPopup, setDeleteMessagesPopup] = useState(false)
     const [openInfo, setOpenInfo] = useState(false)
     const [arr, setArr] = useState([])
+    const [areDeleted, setAreDeleted] = useState(false)
+    const [isMessageReceived, setIsMessageReceived] = useState(false)
     const [isRequested, setIsRequested] = useState(false)
     const inputRef = useRef(null)
     const buttonRef = useRef(null)
@@ -82,6 +85,7 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
                     userCallArgs.current = {...userCallArgs.current, message_id: message._id}
                 }
                 setArr(prev => [...prev, message])
+                setIsMessageReceived(true)
             }
         }
         socketInstance.on('get chat', getChat)
@@ -268,7 +272,6 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
     
     useEffect(() => {
         if(!data) return
-        // userCallArgs.current = { user_id: data.user._id, chat_id: data.chat._id }
         dataRef.current = data
         setArr(data.chat.messages.filter(item => !item.deletedForOne.includes(account._id)).map(item => { return { ...item, selected: false } }))
     }, [data])
@@ -343,6 +346,28 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
     
     useEffect(() => {
         if(!chatAreaRef.current) return
+        if(areDeleted) {
+            setAreDeleted(false)
+            return
+        }
+        if(isMessageReceived) {
+            setIsMessageReceived(false)
+            if(arr[arr.length - 1].sender === account._id) {
+                chatAreaRef.current.scrollTo({
+                    top: chatAreaRef.current.scrollHeight,
+                    behavior: 'smooth'
+                })
+            } else {
+                const dtb = chatAreaRef.current.scrollHeight - chatAreaRef.current.scrollTop - chatAreaRef.current.clientHeight
+                if(dtb <= 500) {
+                    chatAreaRef.current.scrollTo({
+                        top: chatAreaRef.current.scrollHeight,
+                        behavior: 'smooth'
+                    })
+                }
+            }
+            return
+        }
         chatAreaRef.current.scrollTo({
             top: chatAreaRef.current.scrollHeight,
             behavior: 'smooth'
@@ -355,7 +380,7 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
             <div className={`${selecteds.length ? 'bg-[#ffffff11]' : ''} px-4 flex justify-between items-center w-full min-h-[75px] border-b border-borders`}>
                 {!selecteds.length ? (
                     <><div className='gap-4 flex items-center'>
-                        <Pfp size='45px' url='url(https://scontent.cdninstagram.com/v/t51.75761-19/505432788_18081790582816553_1268032086364561825_n.jpg?stp=dst-jpg_s206x206_tt6&_nc_cat=110&ccb=1-7&_nc_sid=bf7eb4&_nc_ohc=qmxJ_5-UinEQ7kNvwFCNS_A&_nc_oc=AdmIXu8mEQhIitYQtvtet_bTHTYZYT-nDXVoVc1u6sHprRDAe9Mtkdb0dvFEXxlZcOkJhMwLF8s1XxaH0SolAfNk&_nc_zt=24&_nc_ht=scontent.cdninstagram.com&_nc_gid=SKVnChxPP1rv6otItJg7jw&oh=00_AfP9fDjH-Ct--T7FE4yF2sMTuvlun4giq5Ucs0_IEqA_7Q&oe=68585D75)'/>
+                        <Pfp size='45px' url={`url(https://res.cloudinary.com/drzswoizu/image/upload/uploads/${data.user._id}.png?v=${dateNow})`}/>
                         <div className='flex-col items-start'>
                             <div className='text-white text-[1.2rem] font-semibold'>{data.user.username}</div>
                             {!isRequested ?
@@ -413,10 +438,52 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
                         }} className='active:opacity-55'><CloseIcon/></button>
                     </div>
                     <div className='flex gap-4 items center justify-self-end'>
-                        {selecteds.length == 1 ? <>
-                        <button className='active:opacity-55'><ReplyIcon/></button>
-                        <button className='active:opacity-55'><CopyIcon/></button>
-                        </> : <></>}
+                        <button onClick={() => {
+                            if(selecteds.length < arr.length) {
+                                setSelecteds(arr.map(item => {
+                                    return {
+                                        message_id: item._id,
+                                        sender: item.sender,
+                                        deletedForBoth: item.deletedForBoth
+                                    }
+                                }))
+                                setArr(prev => prev.map(item => {
+                                    return {...item, selected: true}
+                                }))
+                            } else {
+                                setSelecteds([])
+                                setArr(prev => prev.map(item => {
+                                    return {...item, selected: false}
+                                }))
+                            }
+                        }} className='active:opacity-55'><SelectAll/></button>
+                        {selecteds.length == 1 ? <button onClick={() => {
+                            const selectedId = selecteds[0].message_id;
+                            const found = [...arr].reverse().find(item => item._id === selectedId);
+                    
+                            if (!found) return;
+                            if(found.deletedForBoth) {
+                                navigator.clipboard.writeText('Trying to be slick huh??')
+                                .then(() => {
+                                    setSelecteds([]);
+                                    setArr(prev => prev.map(item => ({
+                                        ...item,
+                                        selected: false
+                                    })));
+                                })
+                                .catch(err => console.error("Failed to copy:", err));
+                                return
+                            }
+                            navigator.clipboard.writeText(found.message)
+                            .then(() => {
+                                setSelecteds([]);
+                                setArr(prev => prev.map(item => ({
+                                    ...item,
+                                    selected: false
+                                })));
+                            })
+                            .catch(err => console.error("Failed to copy:", err));
+                        }} className='active:opacity-55'><CopyIcon/></button> : <></>}
                         <button onClick={() => setDeleteMessagesPopup(true)} className='active:opacity-55'><DeleteIcon/></button>
                     </div></>)
                 }
@@ -508,13 +575,6 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
                         {(() => {
                             if(index === arr.length - 1 && item.sender === account._id && item.seen === true) {
                                 return <div className='text-white/50 text-[0.8rem]'>Seen</div>
-                                const dtb = chatAreaRef.current.scrollHeight - chatAreaRef.current.scrollTop - chatAreaRef.current.clientHeight
-                                if(dtb <= 25) {
-                                    chatAreaRef.current.scrollTo({
-                                        top: chatAreaRef.current.scrollHeight,
-                                        behavior: 'smooth'
-                                    })
-                                }
                             }
                         })()}
                     </div>
@@ -557,7 +617,7 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
                 <div className={`pt-10 flex flex-col gap-2 items-center transition ease-in-out duration-500 ${openInfo ? 'translate-x-0' : 'translate-x-[382px]'} absolute right-0 h-full w-[382px] border-l border-borders bg-black text-white`}>
                 <button onClick={() => setOpenInfo(false)} className='absolute left-[10px] top-[10px]'><CloseIcon/></button>
                 <div>
-                    <Pfp size='250px' url='url(https://scontent.cdninstagram.com/v/t51.75761-19/505432788_18081790582816553_1268032086364561825_n.jpg?stp=dst-jpg_s206x206_tt6&_nc_cat=110&ccb=1-7&_nc_sid=bf7eb4&_nc_ohc=qmxJ_5-UinEQ7kNvwFCNS_A&_nc_oc=AdmIXu8mEQhIitYQtvtet_bTHTYZYT-nDXVoVc1u6sHprRDAe9Mtkdb0dvFEXxlZcOkJhMwLF8s1XxaH0SolAfNk&_nc_zt=24&_nc_ht=scontent.cdninstagram.com&_nc_gid=SKVnChxPP1rv6otItJg7jw&oh=00_AfP9fDjH-Ct--T7FE4yF2sMTuvlun4giq5Ucs0_IEqA_7Q&oe=68585D75)'/>
+                    <Pfp size='250px' url={`url(https://res.cloudinary.com/drzswoizu/image/upload/uploads/${data.user._id}.png?v=${dateNow})`}/>
                 </div>
                 <div className='text-[2rem]'>{data.user.username}</div>
                 <div className='font-[200] mt-7 flex flex-col w-[80%] gap-2 text-[.9rem]'>
@@ -625,6 +685,7 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
                         }
                         <button onClick={() => {
                             setArr(prev => prev.filter(e => !selecteds.some(f => f.message_id === e._id)))
+                            setAreDeleted(true)
                             setDeleteMessagesPopup(false)
                             socket.emit('delete for me', { chat_id: data.chat._id, my_id: account._id, selecteds })
                             setSelecteds([])

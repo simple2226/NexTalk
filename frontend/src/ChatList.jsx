@@ -5,9 +5,10 @@ import { io } from 'socket.io-client'
 import CloseIcon from './assets/CloseIcon'
 import NotAllowed from './assets/NotAllowed'
 
-export default function ChatList({data, account, setChatInfo}) {
+export default function ChatList({data, account, setChatInfo, dateNow}) {
     const [openRequests, setOpenRequests] = useState(false)
     const [selectedContactId, setSelectedContactId] = useState(null);
+    const [search, setSearch] = useState('')
     return (
         !openRequests ?
         <div className='pt-5 flex flex-col items-start h-[100vh] min-w-[397px] max-w-[397px] border-r border-borders'>
@@ -17,24 +18,26 @@ export default function ChatList({data, account, setChatInfo}) {
             </div>
             <div className='mt-5 px-3 flex items-center gap-3 self-center p-2 rounded-md w-[92%] bg-[#ffffff2a]'>
                 <SearchIcon/>
-                <input type="text" className='text-[.9rem] text-white w-full' placeholder='Search'/>
+                <input value={search} onChange={e => setSearch(e.target.value)} type="text" className='text-[.9rem] text-white w-full' placeholder='Search by name'/>
             </div>
             <div className='mt-3 relative flex flex-col overflow-y-auto w-full h-full'>
             {data ?
-                (data.Contacts.sort((a, b) => new Date(b.lastUpdated) - new Date(a.lastUpdated)).map((item, index) => {
+                ((search.length ? data.Contacts.filter(item => item.name.toLowerCase().includes(search.toLowerCase())) : data.Contacts).sort((a, b) => new Date(b.lastUpdated) - new Date(a.lastUpdated)).map((item, index) => {
                     const isSelected = item._id === selectedContactId
                     return <div onClick={() => {
                         if (isSelected) return
                         setSelectedContactId(item._id)
                         setChatInfo({ chat_id: item._id, my_id: account._id, user_id: item.others_id, request: false })
                     }} key={index} className={`select-none ${isSelected ? 'bg-white/14' : 'hover:bg-[#ffffff13]'} relative px-4 gap-3 flex items-center w-full min-h-[75px] cursor-pointer`}>
-                        <Pfp size='40px' url='url(https://scontent.cdninstagram.com/v/t51.75761-19/505432788_18081790582816553_1268032086364561825_n.jpg?stp=dst-jpg_s206x206_tt6&_nc_cat=110&ccb=1-7&_nc_sid=bf7eb4&_nc_ohc=qmxJ_5-UinEQ7kNvwFCNS_A&_nc_oc=AdmIXu8mEQhIitYQtvtet_bTHTYZYT-nDXVoVc1u6sHprRDAe9Mtkdb0dvFEXxlZcOkJhMwLF8s1XxaH0SolAfNk&_nc_zt=24&_nc_ht=scontent.cdninstagram.com&_nc_gid=SKVnChxPP1rv6otItJg7jw&oh=00_AfP9fDjH-Ct--T7FE4yF2sMTuvlun4giq5Ucs0_IEqA_7Q&oe=68585D75)'/>
+                        <Pfp size='40px' url={`url(https://res.cloudinary.com/drzswoizu/image/upload/uploads/${item.others_id}.png?v=${dateNow})`}/>
                         <div className='flex flex-col items-start'>
                             <div className='text-white text-[1rem] font-semibold'>{item.name}</div>
                             <div className={`${(item.userA.id === account._id ? item.userA.checked : item.userB.checked) ?
                             'text-[#ffffff6c]' : 'text-white font-semibold'}  text-[.9rem] text-nowrap`}>
                                 {item.lastMessage ? 
                                     (() => {
+                                        const me = item.lastMessage.sender === account._id ? 'You : ' : ''
+
                                         if(item.lastMessage.deletedForBoth) {
                                             return <div className='flex gap-2 items-center text-[#ffffff6c]'>
                                                 <NotAllowed size='10px' color='#ffffff6c'/> this message is deleted
@@ -42,10 +45,18 @@ export default function ChatList({data, account, setChatInfo}) {
                                         }
 
                                         if(item.lastMessage.isCall.isIt) {
-                                            return item.lastMessage.isCall.typeOfCall + ' Call'
+                                            return <>{me}&nbsp;{item.lastMessage.isCall.typeOfCall} Call &nbsp;<b>{(new Date(item.lastMessage.sentWhen)).toLocaleTimeString('en-US', {
+                                                hour: '2-digit',
+                                                minute: '2-digit',
+                                                hour12: true
+                                            }).toString()}</b></>
                                         }
                                         
-                                        return item.lastMessage.message
+                                        return <>{me}&nbsp;{item.lastMessage.message} &nbsp;<b>{(new Date(item.lastMessage.sentWhen)).toLocaleTimeString('en-US', {
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                            hour12: true
+                                        }).toString()}</b></>
                                     })()
                                     :
                                     "Start the conversation!"
@@ -88,7 +99,33 @@ export default function ChatList({data, account, setChatInfo}) {
                         <div className='flex flex-col items-start'>
                             <div className='text-white text-[1rem] font-semibold'>{item.name}</div>
                             <div className={`${(item.userA.id === account._id ? item.userA.checked : item.userB.checked) ?
-                            'text-[#ffffff6c]' : 'text-white font-semibold'}  text-[.9rem]`}>{item.lastMessage ? item.lastMessage.message : "Start the conversation!"}</div>
+                            'text-[#ffffff6c]' : 'text-white font-semibold'}  text-[.9rem] text-nowrap`}>{
+                                item.lastMessage ? 
+                                (() => {
+                                    const me = item.lastMessage.sender === account._id ? 'You : ' : ''
+                                    if(item.lastMessage.deletedForBoth) {
+                                        return <div className='flex gap-2 items-center text-[#ffffff6c]'>
+                                            <NotAllowed size='10px' color='#ffffff6c'/> this message is deleted
+                                        </div>
+                                    }
+
+                                    if(item.lastMessage.isCall.isIt) {
+                                        return <>{me}&nbsp;{item.lastMessage.isCall.typeOfCall} Call &nbsp;<b>{(new Date(item.lastMessage.sentWhen)).toLocaleTimeString('en-US', {
+                                            hour: '2-digit',
+                                            minute: '2-digit',
+                                            hour12: true
+                                        }).toString()}</b></>
+                                    }
+                                    
+                                    return <>{me}&nbsp;{item.lastMessage.message} &nbsp;<b>{(new Date(item.lastMessage.sentWhen)).toLocaleTimeString('en-US', {
+                                        hour: '2-digit',
+                                        minute: '2-digit',
+                                        hour12: true
+                                    }).toString()}</b></>
+                                })()
+                                :
+                                "Start the conversation!"
+                            }</div>
                         </div>
                         {(() => {
                             if(item.userA.id === account._id) return item.userA.numNotRead

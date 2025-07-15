@@ -2,15 +2,16 @@ import React from 'react'
 
 export default function Pfp({size, url}) {
     return (
-        <div className='border border-borders bg-borders rounded-full' 
+        <div className='border border-[#646464] bg-borders rounded-full' 
         style={{
+            backgroundImage: url,
             height: size,
             width: size,
             minWidth: size,
-            backgroundImage: url,
-            backgroundSize: 'contain',
+            backgroundSize: 'cover',
             backgroundRepeat: 'no-repeat',
-            backgroundRosition: 'center',
+            backgroundPosition: 'center',
+            overflow: 'hidden'
         }}></div>
     )
 }

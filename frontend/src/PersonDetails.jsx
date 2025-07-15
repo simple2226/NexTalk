@@ -17,15 +17,18 @@ export default function PersonDetails(vars) {
     }
     return (
         <div className='pt-6 flex flex-col gap-10 items-center min-w-[70px] border-r border-borders'>
-            <div className='border border-borders size-[35px] bg-borders rounded-full' 
+            <div className='border border-[#646464] size-[35px] bg-borders rounded-full' 
             style={{
-                backgroundImage: 'url(https://scontent.cdninstagram.com/v/t51.75761-19/502396379_17846840958486842_7848883373300275011_n.jpg?stp=dst-jpg_s150x150_tt6&_nc_cat=106&ccb=1-7&_nc_sid=f7ccc5&_nc_ohc=stEBJL29lNMQ7kNvwEqHax_&_nc_oc=AdmiJboLlvGiDvRPxLXh-0zodWaUQi04pCrzCrUbqJk0QmagLd8io-oRHS9i4UeBKpxp10svGH02rsVM4QjSxapk&_nc_ad=z-m&_nc_cid=0&_nc_zt=24&_nc_ht=scontent.cdninstagram.com&_nc_gid=J0b7BPGGLjj1zVrSwmo3RA&oh=00_AfNv26brlbhzCabjAMJt0PWL7GHYWWZxKQE-hqd9pCOB5Q&oe=68587560)',
-                backgroundSize: 'contain',
+                backgroundImage: `url(https://res.cloudinary.com/drzswoizu/image/upload/uploads/${vars.account._id}.png?v=${vars.dateNow})`,
+                backgroundSize: 'cover',
                 backgroundRepeat: 'no-repeat',
-                backgroundRosition: 'center',
+                backgroundPosition: 'center',
+                width: '35px',
+                height: '35px',
+                overflow: 'hidden'
             }}></div>
             <div className='flex flex-col gap-3'>
-                <button className='group relative flex items-center p-2 hover:bg-gray-800 rounded-sm'>
+                <button onClick={() => vars.setSettings(true)} className='group relative flex items-center p-2 hover:bg-gray-800 rounded-sm'>
                     <SettingsIcon/>
                     <div className='bg-gray-800 p-2 border border-borders rounded-lg z-[9999] text-[.7rem] left-[120%] absolute hidden group-hover:flex text-white text-nowrap'>Settings</div>
                 </button>

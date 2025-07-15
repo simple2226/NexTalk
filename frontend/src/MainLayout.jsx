@@ -23,12 +23,17 @@ export default function MainLayout() {
     const [newPhone, setNewPhone] = useState('')
     const [firstM, setFirstM] = useState('')
     const [invErr, setInvErr] = useState(null)
+    const [settings, setSettings] = useState(false)
+    const fileRef = useRef(null)
+    const [uploading, setUploading] = useState(false)
+    const [file, setFile] = useState(null)
     const [chatInfo, setChatInfo] = useState({ chat_id: null, my_id: null, user_id: null })
     const [socket, setSocket] = useState(null)
     const navigate = useNavigate()
     const AppRef = useRef(null)
     const [isOnCall, setIsOnCall] = useState(false)
     const [hasRemoteStream, setHasRemoteStream] = useState(false)
+    const [dateNow, setDateNow] = useState(Date.now())
 
     const peerConnectionRef = useRef(null)
     const localVideoRef = useRef(null)
@@ -40,6 +45,31 @@ export default function MainLayout() {
     const [localMicOn, setLocalMicOn] = useState(true)
     const [remoteCamOn, setRemoteCamOn] = useState(true)
     const [remoteMicOn, setRemoteMicOn] = useState(true)
+
+    const uploadPfp = async () => {
+        try {
+            if (!file) {
+                alert('Please select a file and enter a name');
+                return;
+            }
+            setUploading(true)
+            const formData = new FormData();
+            formData.append('image', file);
+            formData.append('name', account._id);
+            await axios.post('api/auth/uploadPfp', formData, {
+                headers: {
+                'Content-Type': 'multipart/form-data',
+                },
+                withCredentials: true
+            });
+        } catch(err) {
+            console.error(err)
+        } finally {
+            setUploading(false)
+            setFile(null)
+            setSettings(false)
+        }
+    }
 
     const toggleMic = () => {
         if(!hasRemoteStream || localVideoRef.current === null) return;
@@ -105,6 +135,9 @@ export default function MainLayout() {
         verify()
     }, [])
 
+    useEffect(() => {
+        console.log('yo')
+    }, [account])
     
     useEffect(() => {
         if(verify === 0) return
@@ -178,14 +211,17 @@ export default function MainLayout() {
             <div ref={AppRef} className='animate-outToIn relative h-full w-full'>
                 <div className='flex'>
                     <PersonDetails
-                        addNewContact={addNewContact}
+                        account={account}
                         setAddNewContact={setAddNewContact}
+                        setSettings={setSettings}
+                        dateNow={dateNow}
                     />
 
                     <ChatList
                         data={data}
                         account={account}
                         setChatInfo={setChatInfo}
+                        dataNow={dateNow}
                     />
 
                     <ChatArea
@@ -207,6 +243,7 @@ export default function MainLayout() {
                         account={account}
                         chatInfo={chatInfo}
                         socket={socket}
+                        dataNow={dateNow}
                     />
                 </div>
                 {addNewContact ?
@@ -264,6 +301,40 @@ export default function MainLayout() {
                     :
                     null
                 }
+
+                {settings ?
+                    <div className='animate-showUp bg-black backdrop-blur-md absolute z-[999999] left-0 top-0 text-white h-full w-full flex items-center justify-center'>
+                        <button onClick={(e) => {
+                            if(uploading) return
+                            e.preventDefault()
+                            setSettings(false)
+                            setFile(null)
+                        }} className='absolute left-5 top-5'><CloseIcon/></button>
+                        <div className='transition bg-black ease-in-out duration-300 hover:shadow-[0_14px_20px_5px_#ffffffce] relative p-18 flex flex-col items-center gap-2 border border-borders rounded-sm'>
+                            <div className='absolute left-4 -top-7 text-[2rem] text-[#ffffffb0] bg-black italic'>Settings</div>
+                            <button onClick={() => {
+                                fileRef.current.click();
+                            }} className='max-w-[264.31px] break-all text-[1.2rem] text-white/70 rounded-sm px-5 py-2 hover:bg-white/10'>
+                                {file ? file.name : 'Change you Profile Picture'}
+                                <input
+                                    ref={fileRef}
+                                    type="file"
+                                    accept=".jpg,.jpeg,.png,.webp,.bmp"
+                                    onChange={e => {
+                                        const file = e.target.files[0]
+                                        if(file) setFile(file)
+                                    }}
+                                    className='hidden'
+                                />
+                            </button>
+                            {file?<button onClick={() => uploadPfp()} className='transition duration-100 ease-linear px-3 p-1 hover:text-[#3797F0] w-fit text-[.9rem]'>Upload This as new pfp?</button>:<></>}
+                            {uploading?<div className='w-[3rem] border-t animate-ping'></div>:<></>}
+                        </div>
+                    </div>
+                    :
+                    null
+                }
+
                 <div className={`animate-showUp flex flex-col ${!isOnCall ? 'hidden' : ''} z-[9999999999] absolute top-0 left-0 h-[100vh] w-[100vw] rounded-4xl`}
                     style={{
                         backgroundImage: 'radial-gradient(circle, #5d5c6e, #575668, #515062, #4c4b5c, #464556, #424151, #3d3c4b, #393846, #343340, #302f3a, #2b2a35, #27262f)'

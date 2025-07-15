@@ -10,7 +10,7 @@ export default function SignUp() {
     const [PhE, setPhE] = useState(false)
     const [NE, setNE] = useState(false)
     const [PswE, setPswE] = useState(false)
-    // const [FourOFour]
+    const [FourONine, setFourONine] = useState(false)
     const [CnE, setCnE] = useState(false)
     const nav = useNavigate()
 
@@ -26,16 +26,16 @@ export default function SignUp() {
                 setPhE(true)
                 return
             }
+            if(!isValidIndianPhoneNumber(phone)) {
+                setInvPhE(true)
+                return
+            }
             if(!username.length) {
                 setNE(true)
                 return
             }
             if(!password.length) {
                 setPswE(true)
-                return
-            }
-            if(!isValidIndianPhoneNumber(phone)) {
-                setInvPhE(true)
                 return
             }
             const response = await axios.post('api/accounts/add', {
@@ -47,7 +47,8 @@ export default function SignUp() {
             })
             nav('/')
         } catch (error) {
-            
+            if(error.response.status === 500) setCnE(true)
+            if(error.response.status === 404) setFourONine(true)
         }
     }
     return (
@@ -56,21 +57,44 @@ export default function SignUp() {
                 <div className='absolute left-4 -top-7 text-[2rem] text-[#ffffffb0] bg-black italic'>Create a new Account</div>
                 <div className='relative flex flex-col items-start gap-2'>
                     <div className='text-[1.1rem] text-[#ffffffd3]'>Your Phone Number</div>
-                    <div className='flex items-center'>
+                    <div className='flex flex-col gap-1 items-start'>
                         <input value={phone} onChange={e => {
                             setPhone(e.target.value)
+                            setInvPhE(false)
+                            setPhE(false)
+                            setFourONine(false)
+                            setCnE(false)
+                            if(e.target.value.length && !isValidIndianPhoneNumber(e.target.value)) setInvPhE(true)
                         }} placeholder='Enter here' className='bg-[#ffffff2a] rounded-sm p-2.5 w-[350px]' type='text'/>
+                        {FourONine ? <div className='text-[.7rem] text-red-500'>This number is not available</div> : <></>}
+                        {PhE ? <div className='text-[.7rem] text-red-500'>This field cannot be empty</div> : <></>}
+                        {invPhE ? <div className='text-[.7rem] text-red-500'>Invalid Phone number</div> : <></>}
                     </div>
                 </div>
                 <div className='flex flex-col items-start gap-2'>
                     <div className='text-[1.1rem] text-[#ffffffd3]'>Full Name</div>
-                    <input value={username} onChange={e => setUsename(e.target.value)} placeholder='Enter here' className='bg-[#ffffff2a] rounded-sm p-2.5 w-[350px]' type="text"/>
+                    <div className='flex flex-col gap-1 items-start'>
+                        <input value={username} onChange={e => {
+                            setUsename(e.target.value)
+                            setNE(false)
+                            setCnE(false)
+                        }} placeholder='Enter here' className='bg-[#ffffff2a] rounded-sm p-2.5 w-[350px]' type="text"/>
+                        {NE ? <div className='text-[.7rem] text-red-500'>This field cannot be empty</div> : <></>}
+                    </div>
                 </div>
                 <div className='flex flex-col items-start gap-2'>
                     <div className='text-[1.1rem] text-[#ffffffd3]'>New Password</div>
-                    <input value={password} onChange={e => setPasswrod(e.target.value)} placeholder='Enter here' className='bg-[#ffffff2a] rounded-sm p-2.5 w-[350px]' type="password"/>
+                    <div className='flex flex-col gap-1 items-start'>
+                        <input value={password} onChange={e => {
+                            setPasswrod(e.target.value)
+                            setPswE(false)
+                            setCnE(false)
+                        }} placeholder='Enter here' className='bg-[#ffffff2a] rounded-sm p-2.5 w-[350px]' type="password"/>
+                        {PswE ? <div className='text-[.7rem] text-red-500'>This field cannot be empty</div> : <></>}
+                    </div>
                 </div>
                 <button onClick={() => getStarted()} className='self-center hover:border-white active:border-borders border border-borders w-fit p-3'>Get Started</button>
+                {CnE ? <div className='absolute bottom-[20px] self-center text-[.7rem] text-red-500'>Connection Error</div>: <></>}
             </div>
         </div>
     )
