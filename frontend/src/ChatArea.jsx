@@ -311,7 +311,7 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
         const input = inputRef.current
         const autoType = (e) => {
             const active = document.activeElement
-
+            
             if (
                 active?.tagName === 'INPUT' ||
                 active?.tagName === 'TEXTAREA' ||

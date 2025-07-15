@@ -13,7 +13,9 @@ export default function Login() {
     const [wrongPass, setWrongPass] = useState(false)
     const [connectErr, setConnectErr] = useState(false)
     const [show, setShow] = useState(0)
+    
     useEffect(() => {
+        document.title = 'NexTalk - Login'
         const verify = async () => {
             try {
                 await axios.post('api/auth/verify', {}, {

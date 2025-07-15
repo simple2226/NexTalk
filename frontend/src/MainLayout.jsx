@@ -121,6 +121,7 @@ export default function MainLayout() {
     }, []);
 
     useEffect(() => {
+        document.title = 'NexTalk'
         const verify = async () => {
         try {
             const response = await axios.post('api/auth/verify', {}, {
@@ -134,10 +135,6 @@ export default function MainLayout() {
         }
         verify()
     }, [])
-
-    useEffect(() => {
-        console.log('yo')
-    }, [account])
     
     useEffect(() => {
         if(verify === 0) return

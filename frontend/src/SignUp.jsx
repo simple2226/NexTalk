@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import axios from 'axios'
 import { useNavigate } from 'react-router-dom'
 
@@ -19,6 +19,10 @@ export default function SignUp() {
         const regex = /^[6-9]\d{9}$/
         return regex.test(digitsOnly);
     }
+    
+    useEffect(() => {
+        document.title = 'NexTalk - SignUp'
+    }, [])
 
     const getStarted = async () => {
         try {
