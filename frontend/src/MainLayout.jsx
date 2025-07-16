@@ -138,7 +138,7 @@ export default function MainLayout() {
     
     useEffect(() => {
         if(verify === 0) return
-        const socketInstance = io('http://localhost:3000', {
+        const socketInstance = io('https://nextalk-production.up.railway.app', {
             transports: ['websocket'],
             withCredentials: true
         })

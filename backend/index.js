@@ -13,7 +13,7 @@ app.use(express.json({ limit: '16mb' }))
 const PORT = process.env.PORT || 3000
 
 app.use(cors({
-    origin: 'https://localhost:5173',
+    origin: 'https://nex-talk-liard.vercel.app',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true
 }))
