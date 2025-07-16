@@ -126,6 +126,16 @@ export default function ChatArea({ connectionVars, isOnCall, setIsOnCall, accoun
                 userCallArgs.current = null
             }
         })
+
+        return () => {
+            if (peerConnectionRef.current) {
+                socketInstance.emit('webrtc-hangup', {my_id: account._id, ...userCallArgs.current});
+            }
+            socketInstance.off()
+            setTimeout(() => {
+                socketInstance.disconnect();
+            }, 100);
+        }
     }, [socket])
 
     const cleanupConnection = () => {
