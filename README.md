@@ -2,7 +2,7 @@
 
 **NexTalk** is a real-time chat application built with **Node.js**, **Socket.IO**, **MongoDB**, and **Express**, providing a fast, interactive messaging experience with user authentication, dynamic rooms, and more.
 
-![NexTalk UI](https://github.com/simple2226/NexTalk/assets/preview-image.png) <!-- Replace with a real screenshot if available -->
+![NexTalk UI](https://github.com/simple2226/NexTalk/tree/main/assets/preview-image.png) <!-- Replace with a real screenshot if available -->
 
 ---
 
