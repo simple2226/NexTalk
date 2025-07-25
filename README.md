@@ -73,8 +73,10 @@ cd NexTalk
 From the `root` directory, run the following commands:
 
 ```bash
-cd \backend npm install
-cd ..\frontend npm install
+cd \backend
+npm install
+cd ..\frontend
+npm install
 ```
 
 3. **Set environment variables**
@@ -96,8 +98,10 @@ CLOUDINARY_API_SECRET=your_cloudinary_api_secret
 From the `root` directory, run the following commands:
 
 ```bash
-cd \backend npm run dev
-cd ..\frontend npm run dev
+cd \backend
+npm run dev
+cd ..\frontend
+npm run dev
 ```
 
 5. **Visit**
